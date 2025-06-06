@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.test
+    environment:
+      - NODE_ENV=production
+    networks:
+      - app-network
+      - test-network
+
+  network-simulator:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./test/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - test-network
+
+networks:
+  app-network:
+  test-network:
+    driver: bridge 
