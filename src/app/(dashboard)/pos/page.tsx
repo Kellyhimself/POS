@@ -13,10 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { getProducts } from '@/lib/api/products';
 import { ProductGrid } from '@/components/products/ProductGrid';
 import { Cart } from '@/components/cart/Cart';
-import { getOfflineProducts } from '@/lib/db';
 import { syncService } from '@/lib/sync';
 import { ReceiptActions } from '@/components/receipt/ReceiptActions';
 import { Database } from '@/types/supabase';
@@ -95,10 +93,12 @@ const POSPage = () => {
   const { data: products, isLoading: isLoadingProducts } = useQuery({
     queryKey: ['products', storeId],
     queryFn: async () => {
-      if (isOnline) {
-        return getProducts(storeId!);
-      } else {
-        return getOfflineProducts();
+      if (!storeId) return [];
+      try {
+        return await syncService.getProducts(storeId);
+      } catch (error) {
+        console.error('Error fetching products:', error);
+        throw error;
       }
     },
     enabled: !!storeId,

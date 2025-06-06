@@ -10,6 +10,7 @@ import Sidebar from '@/components/layout/Sidebar';
 import Navbar from '@/components/layout/Navbar';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { GlobalProductCache } from '@/components/providers/GlobalProductCache';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -26,6 +27,7 @@ export default function RootLayout({
       <body className={inter.className + " bg-app text-app-primary"}>
         <AuthProvider>
           <ReactQueryProvider>
+            <GlobalProductCache />
             <RootLayoutContent>{children}</RootLayoutContent>
           </ReactQueryProvider>
         </AuthProvider>

@@ -24,21 +24,41 @@ export default function DashboardLayout({
     user: null,
     storeId: null,
     storeName: null,
-    isOnline: true
+    isOnline: navigator.onLine
   });
+  const [shouldRedirect, setShouldRedirect] = useState(false);
 
+  // Update app state when auth state changes
   useEffect(() => {
-    const updateAppState = () => {
-      setAppState({
+    if (!loading) {
+      setAppState(prev => ({
+        ...prev,
         user,
         storeId,
         storeName,
         isOnline
-      });
+      }));
+    }
+  }, [user, storeId, storeName, isOnline, loading]);
+
+  // Handle network status changes
+  useEffect(() => {
+    const handleOnline = () => {
+      setAppState(prev => ({ ...prev, isOnline: true }));
     };
 
-    updateAppState();
-  }, [user, storeId, storeName, isOnline]);
+    const handleOffline = () => {
+      setAppState(prev => ({ ...prev, isOnline: false }));
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const isValidAppState = () => {
     const hasUser = !!appState.user;
@@ -47,7 +67,7 @@ export default function DashboardLayout({
 
     console.log('=== RootLayout State Update ===');
     console.log('Loading:', loading);
-    console.log('Online:', isOnline);
+    console.log('Online:', appState.isOnline);
     console.log('Network Status:', navigator.onLine);
     console.log('App State:', appState);
     console.log('✅ App state valid:', { hasUser, hasStore, isOnline: appState.isOnline });
@@ -55,16 +75,25 @@ export default function DashboardLayout({
     return isStateValid;
   };
 
+  // Handle redirection only after loading is complete
   useEffect(() => {
-    if (!loading) {
-      if (!isValidAppState()) {
-        // Only redirect if we're not already on the login page
-        if (!window.location.pathname.startsWith('/login')) {
-          router.push('/login');
-        }
+    if (!loading && !isValidAppState()) {
+      const currentPath = window.location.pathname;
+      if (!currentPath.startsWith('/login')) {
+        console.log('🔄 Setting redirect flag due to invalid state');
+        setShouldRedirect(true);
       }
     }
-  }, [loading, appState, router]);
+  }, [loading, appState]);
+
+  // Handle actual redirection in a separate effect
+  useEffect(() => {
+    if (shouldRedirect) {
+      console.log('🔄 Redirecting to login due to invalid state');
+      router.push('/login');
+      setShouldRedirect(false);
+    }
+  }, [shouldRedirect, router]);
 
   if (loading) {
     return (

@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase-clients/pages';
 import { syncService } from '@/lib/sync';
 import { generateOfflineToken, validateOfflineToken } from '@/lib/auth/encryption';
+import type { UserMetadata } from '@/lib/auth/encryption';
 
 interface AuthContextType {
   user: User | null;
@@ -54,7 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (tokenData) {
           return {
             userId: tokenData.userId,
-            storeId: tokenData.storeId
+            storeId: tokenData.storeId,
+            userMetadata: tokenData.userMetadata
           };
         }
       } catch (error) {
@@ -95,52 +97,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return null;
   };
 
-  // Function to handle offline user state
-  const handleOfflineUser = async () => {
-    console.log('📴 AuthProvider - Handling offline user state');
-    try {
-      // First try to get from cache
-      const cachedState = await getCachedAppState();
-      if (cachedState?.user) {
-        console.log('✅ AuthProvider - Found cached user state');
-        setUser(cachedState.user);
-        setStoreId(cachedState.store?.id || null);
-        setStoreName(cachedState.store?.name || null);
-        return true;
-      }
-
-      // If no cached state, try to get from offline token
-      const offlineContext = getOfflineContext();
-      if (offlineContext) {
-        console.log('✅ AuthProvider - Found valid offline context:', offlineContext);
-        const mockUser = {
-          id: offlineContext.userId,
-          email: '',
-          user_metadata: { 
-            store_id: offlineContext.storeId
-          },
-          app_metadata: {},
-          aud: 'authenticated',
-          created_at: new Date().toISOString()
-        } as User;
-        setUser(mockUser);
-        setStoreId(offlineContext.storeId);
-        
-        // Cache the state for future use
-        await cacheAppState({
-          user: mockUser,
-          store: { id: offlineContext.storeId },
-          lastSync: Date.now()
-        });
-        
-        return true;
-      }
-      console.log('❌ AuthProvider - No valid offline context found');
-      return false;
-    } catch (error) {
-      console.error('❌ AuthProvider - Error handling offline user:', error);
-      return false;
-    }
+  // Function to set offline token cookie
+  const setOfflineTokenCookie = (userId: string, storeId: string, userMetadata: UserMetadata, storeName: string) => {
+    const offlineToken = generateOfflineToken(userId, storeId, {
+      ...userMetadata,
+      store_name: storeName
+    });
+    document.cookie = `offline_token=${offlineToken}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+    console.log('🍪 AuthProvider - Set offline token cookie with store name:', storeName);
   };
 
   // Function to fetch and cache store name
@@ -151,38 +115,114 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Try to get from cache first
       const cachedState = await getCachedAppState();
       if (cachedState?.store?.name) {
+        console.log('📦 AuthProvider - Found store name in cache:', cachedState.store.name);
         setStoreName(cachedState.store.name);
         return;
       }
 
       // If not in cache and online, fetch from API
       if (navigator.onLine) {
-        const { data: storeData } = await supabase
+        console.log('🌐 AuthProvider - Fetching store name from API for store:', storeId);
+        const { data: storeData, error } = await supabase
           .from('stores')
           .select('name')
           .eq('id', storeId)
           .single();
         
+        if (error) {
+          console.error('❌ AuthProvider - Error fetching store name:', error);
+          return;
+        }
+        
         if (storeData?.name) {
+          console.log('✅ AuthProvider - Fetched store name:', storeData.name);
           setStoreName(storeData.name);
           // Cache the updated state
+          const currentState = await getCachedAppState();
           await cacheAppState({
-            user,
-            store: { id: storeId, name: storeData.name },
+            ...currentState,
+            store: { 
+              id: storeId, 
+              name: storeData.name 
+            },
             lastSync: Date.now()
           });
         }
       }
     } catch (error) {
-      console.warn('⚠️ AuthProvider - Error fetching store name:', error);
+      console.error('❌ AuthProvider - Error in fetchAndCacheStoreName:', error);
     }
   };
 
-  // Function to set offline token cookie
-  const setOfflineTokenCookie = (userId: string, storeId: string) => {
-    const offlineToken = generateOfflineToken(userId, storeId);
-    document.cookie = `offline_token=${offlineToken}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
-    console.log('🍪 AuthProvider - Set offline token cookie');
+  // Handle offline user state
+  const handleOfflineUser = async () => {
+    console.log('📴 AuthProvider - Handling offline user state');
+    try {
+      const offlineContext = getOfflineContext();
+      if (offlineContext) {
+        console.log('✅ AuthProvider - Found valid offline context:', offlineContext);
+        const { userId, storeId, userMetadata } = offlineContext;
+        
+        // Create a mock session for offline mode
+        const mockUser = {
+          id: userId,
+          email: userMetadata?.email || '',
+          user_metadata: { 
+            store_id: storeId,
+            first_name: userMetadata?.first_name,
+            name: userMetadata?.name,
+            ...userMetadata
+          },
+          app_metadata: {},
+          aud: 'authenticated',
+          role: 'authenticated',
+          created_at: new Date().toISOString()
+        } as User;
+
+        const mockSession = {
+          user: mockUser,
+          access_token: 'offline_token',
+          refresh_token: 'offline_refresh_token',
+          expires_in: 3600,
+          token_type: 'bearer'
+        } as Session;
+
+        setUser(mockUser);
+        setSession(mockSession);
+        setStoreId(storeId);
+        setIsOnline(false);
+        
+        // Get store name from user metadata in offline token
+        const storeName = userMetadata?.store_name;
+        console.log('📦 AuthProvider - Retrieved store name from offline token:', storeName);
+        
+        if (storeName) {
+          setStoreName(storeName);
+        }
+
+        // Cache the state for future use
+        await cacheAppState({
+          user: mockUser,
+          store: { 
+            id: storeId,
+            name: storeName
+          },
+          lastSync: Date.now()
+        });
+      } else {
+        console.log('❌ AuthProvider - No valid offline context found');
+        setUser(null);
+        setSession(null);
+        setStoreId(null);
+        setStoreName(null);
+      }
+    } catch (error) {
+      console.error('❌ AuthProvider - Error handling offline user:', error);
+      setUser(null);
+      setSession(null);
+      setStoreId(null);
+      setStoreName(null);
+    }
   };
 
   useEffect(() => {
@@ -236,53 +276,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Update the checkUser function to use the new cacheUserData function
+  // Update the checkUser function to handle offline state properly
   useEffect(() => {
     const checkUser = async () => {
       console.log('🔍 AuthProvider - Checking user state');
       setLoading(true);
       try {
-        if (isOnline) {
-          const { data: { session }, error } = await supabase.auth.getSession();
+        // First check if we're offline
+        if (!navigator.onLine) {
+          console.log('📴 AuthProvider - Offline mode detected');
+          setIsOnline(false);
+          await handleOfflineUser();
+          return;
+        }
+
+        // If online, try to get session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('❌ AuthProvider - Error getting session:', error);
+          throw error;
+        }
+
+        if (session?.user) {
+          console.log('✅ AuthProvider - Online user authenticated:', session.user.id);
+          setUser(session.user);
+          setSession(session);
+          setStoreId(session.user.user_metadata.store_id);
+          setIsOnline(true);
           
-          if (error) {
-            console.error('❌ AuthProvider - Error getting session:', error);
-            throw error;
+          // Fetch store name first
+          const { data: storeData } = await supabase
+            .from('stores')
+            .select('name')
+            .eq('id', session.user.user_metadata.store_id)
+            .single();
+          
+          if (storeData?.name) {
+            setStoreName(storeData.name);
+            // Set offline token cookie with user metadata and store name
+            setOfflineTokenCookie(
+              session.user.id,
+              session.user.user_metadata.store_id,
+              session.user.user_metadata,
+              storeData.name
+            );
           }
 
-          if (session?.user) {
-            console.log('✅ AuthProvider - Online user authenticated:', session.user.id);
-            setUser(session.user);
-            setSession(session);
-            setStoreId(session.user.user_metadata.store_id);
-            
-            // Set offline token cookie
-            setOfflineTokenCookie(session.user.id, session.user.user_metadata.store_id);
+          // Cache app state
+          await cacheAppState({
+            user: session.user,
+            store: { 
+              id: session.user.user_metadata.store_id,
+              name: storeData?.name
+            },
+            lastSync: Date.now()
+          });
 
-            // Cache app state
-            await cacheAppState({
-              user: session.user,
-              store: { id: session.user.user_metadata.store_id },
-              lastSync: Date.now()
-            });
-
-            // Fetch and cache store name
-            await fetchAndCacheStoreName(session.user.user_metadata.store_id);
-
-            // Start sync service
-            syncService.startSync();
-            await syncService.initialSync(session.user.user_metadata.store_id);
-          } else {
-            console.log('🔍 AuthProvider - No online session, checking for offline user');
-            await handleOfflineUser();
-          }
+          // Start sync service
+          syncService.startSync();
+          await syncService.initialSync(session.user.user_metadata.store_id);
         } else {
-          console.log('📴 AuthProvider - Offline mode, checking for offline user');
+          console.log('🔍 AuthProvider - No online session, checking for offline user');
           await handleOfflineUser();
         }
       } catch (error) {
         console.error('❌ AuthProvider - Error checking user:', error);
-        if (isOnline) {
+        if (navigator.onLine) {
           setUser(null);
           setStoreId(null);
           setStoreName(null);
@@ -300,16 +360,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session.user);
         setSession(session);
         setStoreId(session.user.user_metadata.store_id);
+        setIsOnline(true);
         
-        // Set offline token cookie
-        setOfflineTokenCookie(session.user.id, session.user.user_metadata.store_id);
+        // Fetch store name first
+        const { data: storeData } = await supabase
+          .from('stores')
+          .select('name')
+          .eq('id', session.user.user_metadata.store_id)
+          .single();
+        
+        if (storeData?.name) {
+          setStoreName(storeData.name);
+          // Set offline token cookie with user metadata and store name
+          setOfflineTokenCookie(
+            session.user.id,
+            session.user.user_metadata.store_id,
+            session.user.user_metadata,
+            storeData.name
+          );
+        }
         
         await cacheAppState({
           user: session.user,
-          store: { id: session.user.user_metadata.store_id },
+          store: { 
+            id: session.user.user_metadata.store_id,
+            name: storeData?.name
+          },
           lastSync: Date.now()
         });
-        await fetchAndCacheStoreName(session.user.user_metadata.store_id);
         syncService.startSync();
         await syncService.initialSync(session.user.user_metadata.store_id);
       } else if (event === 'SIGNED_OUT') {
@@ -331,7 +409,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
       syncService.stopSync();
     };
-  }, [isOnline]);
+  }, []);
 
   // Remove the redirection effect
   useEffect(() => {
@@ -364,7 +442,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setStoreId(data.session.user.user_metadata.store_id);
             
             // Set offline token cookie
-            setOfflineTokenCookie(data.session.user.id, data.session.user.user_metadata.store_id);
+            setOfflineTokenCookie(
+              data.session.user.id,
+              data.session.user.user_metadata.store_id,
+              data.session.user.user_metadata,
+              data.session.user.user_metadata.store_name || ''
+            );
             
             // Cache app state
             await cacheAppState({
@@ -389,7 +472,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               id: offlineContext.userId,
               email: '',
               user_metadata: { 
-                store_id: offlineContext.storeId
+                store_id: offlineContext.storeId,
+                first_name: offlineContext.userMetadata?.first_name,
+                name: offlineContext.userMetadata?.name,
+                ...offlineContext.userMetadata
               },
               app_metadata: {},
               aud: 'authenticated',
