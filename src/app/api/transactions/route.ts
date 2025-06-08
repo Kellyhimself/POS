@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-clients/server';
+import { createServiceRoleClient } from '@/lib/supabase-clients/service-role';
 import { NextResponse } from 'next/server';
 import { processMpesaPayment, createSale } from '../supabase/edge-functions';
 import { formatEtimsInvoice, validateEtimsInvoice, submitEtimsInvoice } from '@/lib/etims/utils';
@@ -56,8 +57,8 @@ export async function POST(request: Request) {
       displayPrice: p.displayPrice || p.price
     }));
 
-    // Create sale record (returns transaction id)
-    const { data: transactionId, error: saleError } = await createSale({
+    // Create sale record (returns first transaction id)
+    const { data: firstTransactionId, error: saleError } = await createSale({
       store_id,
       products: mappedProducts,
       payment_method: payment_method as 'cash' | 'mpesa',
@@ -66,19 +67,53 @@ export async function POST(request: Request) {
     });
 
     if (saleError) {
-      console.error('Sale creation error:', saleError);
       const error = saleError as SaleError;
       return NextResponse.json({ error: `Failed to create sale: ${error.message}` }, { status: 500 });
     }
 
-    // Fetch the transaction record
+    if (!firstTransactionId) {
+      throw new Error('No transaction ID returned from sale creation');
+    }
+
+    // Fetch all transactions for this sale
     const supabase = await createClient();
-    const { data: transaction, error: transactionError } = await supabase
+    const serviceClient = await createServiceRoleClient();
+    
+    // Add retry mechanism with exponential backoff
+    let transactions = null;
+    let retryCount = 0;
+    const maxRetries = 3;
+    const baseDelay = 500; // 500ms base delay
+    
+    while (retryCount < maxRetries) {
+      const { data: fetchedTransactions, error: transactionError } = await serviceClient
       .from('transactions')
       .select('*')
-      .eq('id', transactionId)
-      .single();
-    if (transactionError) throw transactionError;
+      .eq('store_id', store_id)
+        .gte('timestamp', new Date(Date.now() - 5000).toISOString())
+      .order('timestamp', { ascending: false });
+    
+    if (transactionError) {
+      throw transactionError;
+      }
+      
+      if (fetchedTransactions && fetchedTransactions.length > 0) {
+        transactions = fetchedTransactions;
+        break;
+      }
+      
+      // Wait with exponential backoff before retrying
+      const delay = baseDelay * Math.pow(2, retryCount);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      retryCount++;
+    }
+    
+    if (!transactions || transactions.length === 0) {
+      throw new Error('No transactions found after creation');
+    }
+
+    // Use the first transaction for receipt generation
+    const transaction = transactions[0];
 
     // Fetch store details for receipt
     const { data: store, error: storeError } = await supabase
@@ -86,7 +121,10 @@ export async function POST(request: Request) {
       .select('id, name, address')
       .eq('id', store_id)
       .single();
-    if (storeError) throw storeError;
+    
+    if (storeError) {
+      throw storeError;
+    }
 
     // Generate receipt object
     const receipt = {
@@ -96,20 +134,20 @@ export async function POST(request: Request) {
         address: store.address
       },
       sale: {
-        id: transaction.id,
+        id: firstTransactionId,
         created_at: transaction.timestamp || new Date().toISOString(),
         payment_method: transaction.payment_method,
-        subtotal: transaction.total - (transaction.vat_amount || 0),
-        vat_total: transaction.vat_amount || 0,
-        total: transaction.total,
+        subtotal: total_amount - vat_total,
+        vat_total: vat_total,
+        total: total_amount,
         products: mappedProducts.map((p: Product) => ({
           id: p.id,
           name: p.name,
           quantity: p.quantity,
-          price: p.price,
+          price: p.displayPrice || p.price,
           vat_amount: p.vat_amount,
           vat_status: p.vat_amount > 0 ? 'VATABLE' : 'EXEMPT',
-          total: p.price * p.quantity
+          total: (p.displayPrice || p.price) * p.quantity
         }))
       }
     };
@@ -118,30 +156,20 @@ export async function POST(request: Request) {
     let etimsValidationErrors = null;
 
     // Submit to eTIMS if VAT is applicable
-    if ((transaction.vat_amount || 0) > 0) {
+    if (vat_total > 0) {
       try {
-        // Use helpers for formatting and validation
         const invoice = formatEtimsInvoice(transaction, mappedProducts, store_id);
         const validationErrors = validateEtimsInvoice(invoice);
         
         if (validationErrors.length === 0) {
-          console.log('Submitting invoice to eTIMS:', {
-            invoice_number: invoice.invoice_number,
-            date: invoice.date,
-            total_amount: invoice.total_amount,
-            vat_total: invoice.vat_total
-          });
-          
           const { data: etimsData, error: etimsError } = await submitEtimsInvoice(invoice);
           
           if (etimsError) {
-            console.error('eTIMS submission error:', etimsError);
             etimsResult = { 
               error: etimsError.message || etimsError,
               details: 'Failed to submit invoice to KRA eTIMS'
             };
           } else {
-            console.log('eTIMS submission successful:', etimsData);
             etimsResult = { 
               success: true,
               data: etimsData,
@@ -149,11 +177,9 @@ export async function POST(request: Request) {
             };
           }
         } else {
-          console.error('eTIMS validation errors:', validationErrors);
           etimsValidationErrors = validationErrors;
         }
       } catch (error) {
-        console.error('Unexpected error during eTIMS submission:', error);
         etimsResult = { 
           error: error instanceof Error ? error.message : 'Unknown error',
           details: 'Failed to process eTIMS submission'
@@ -163,15 +189,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      transaction,
+      transactions,
       receipt,
       etims: etimsResult,
       etimsValidationErrors
     });
   } catch (error) {
-    console.error('Transaction processing error:', error);
     return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Failed to process transaction',
+      error: error instanceof Error ? error.message : 'Unknown error',
       details: error instanceof Error ? error.stack : undefined
     }, { status: 500 });
   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useQuery } from '@tanstack/react-query';
@@ -10,15 +10,17 @@ type Product = Database['public']['Tables']['products']['Row'];
 
 interface ProductGridProps {
   onAddToCart: (product: Product, isWholesale: boolean) => void;
+  onProductsLoaded?: (products: Product[]) => void;
+  shouldRefetch?: boolean;
 }
 
-export function ProductGrid({ onAddToCart }: ProductGridProps) {
+export function ProductGrid({ onAddToCart, onProductsLoaded, shouldRefetch = false }: ProductGridProps) {
   const { storeId } = useAuth();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   // Fetch products
-  const { data: products, isLoading } = useQuery<Product[]>({
+  const { data: products, isLoading, refetch } = useQuery<Product[]>({
     queryKey: ['products', storeId],
     queryFn: async () => {
       if (!storeId) return [];
@@ -31,7 +33,25 @@ export function ProductGrid({ onAddToCart }: ProductGridProps) {
       }
     },
     enabled: !!storeId,
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    staleTime: 0, // Consider data stale immediately
   });
+
+  // Reset filters and refetch when shouldRefetch changes
+  useEffect(() => {
+    if (shouldRefetch) {
+      setSearch('');
+      setSelectedCategory('all');
+      refetch();
+    }
+  }, [shouldRefetch, refetch]);
+
+  // Notify parent component when products are loaded
+  useEffect(() => {
+    if (products && onProductsLoaded) {
+      onProductsLoaded(products);
+    }
+  }, [products, onProductsLoaded]);
 
   // Get unique categories
   const categories = products ? ['all', ...new Set(products.map(p => p.category || 'Uncategorized'))] : ['all'];

@@ -86,16 +86,18 @@ export const createSale = async (saleData: {
     }
   }
 
+  const mappedProducts = saleData.products.map(p => ({
+    product_id: p.id,
+    quantity: p.quantity,
+    price: p.price,
+    vat_amount: p.vat_amount,
+    saleMode: p.saleMode || 'retail',
+    displayPrice: p.displayPrice || p.price
+  }));
+
   const { data, error } = await supabase.rpc('create_sale', {
     p_store_id: saleData.store_id,
-    p_products: saleData.products.map(p => ({
-      product_id: p.id,
-      quantity: p.quantity,
-      price: p.price,
-      vat_amount: p.vat_amount,
-      saleMode: p.saleMode || 'retail',
-      displayPrice: p.displayPrice || p.price
-    })),
+    p_products: mappedProducts,
     p_payment_method: saleData.payment_method,
     p_total_amount: saleData.total_amount,
     p_vat_total: saleData.vat_total

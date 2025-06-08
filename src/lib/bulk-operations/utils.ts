@@ -19,22 +19,45 @@ export interface BulkProductUpdate {
 }
 
 export const exportProductsToCSV = (products: Product[]): string => {
-  const csvData = products.map(product => ({
-    id: product.id,
-    name: product.name,
-    sku: product.sku,
-    quantity: product.quantity,
-    unit_of_measure: product.unit_of_measure,
-    units_per_pack: product.units_per_pack,
-    retail_price: product.retail_price,
-    wholesale_price: product.wholesale_price,
-    wholesale_threshold: product.wholesale_threshold,
-    cost_price: product.cost_price,
-    vat_status: product.vat_status,
-    category: product.category
-  }));
+  const headers = [
+    'id',
+    'name',
+    'sku',
+    'description',
+    'category',
+    'unit_of_measure',
+    'quantity',
+    'retail_price',
+    'wholesale_price',
+    'vat_status',
+    'vat_rate',
+    'barcode',
+    'supplier',
+    'minimum_stock',
+    'maximum_stock',
+    'reorder_point'
+  ].join(',');
 
-  return Papa.unparse(csvData);
+  const rows = products.map(product => [
+    product.id,
+    escapeCSV(product.name || ''),
+    escapeCSV(product.sku || ''),
+    escapeCSV(product.description || ''),
+    escapeCSV(product.category || ''),
+    escapeCSV(product.unit_of_measure || ''),
+    product.quantity,
+    product.retail_price,
+    product.wholesale_price || '',
+    product.vat_status ? 'true' : 'false',
+    product.vat_rate || '',
+    escapeCSV(product.barcode || ''),
+    escapeCSV(product.supplier || ''),
+    product.minimum_stock || '',
+    product.maximum_stock || '',
+    product.reorder_point || ''
+  ].join(','));
+
+  return [headers, ...rows].join('\n');
 };
 
 export const importProductsFromCSV = (csvContent: string): BulkProductUpdate[] => {
@@ -110,4 +133,129 @@ export const generateBulkUpdateSQL = (updates: BulkProductUpdate[]): string => {
   });
 
   return updateStatements.join('\n');
-}; 
+};
+
+export function generateStockUpdateTemplate() {
+  const headers = [
+    'identifier',
+    'quantity_change'
+  ].join(',');
+
+  const exampleRows = [
+    'SHIRT-BLUE-M,10',
+    'PROD-001,-5',
+    '123e4567-e89b-12d3-a456-426614174000,20'
+  ].join('\n');
+
+  const instructions = [
+    '# Stock Update Template',
+    '# Instructions:',
+    '# 1. identifier: Use either your product SKU or the product ID (UUID)',
+    '# 2. quantity_change: The amount to add (positive) or subtract (negative) from current stock',
+    '# Examples:',
+    '# - A value of 10 will add 10 units',
+    '# - A value of -5 will remove 5 units',
+    '# - You can use either SKU (e.g., SHIRT-BLUE-M) or product ID (UUID)',
+    '',
+    headers,
+    exampleRows
+  ].join('\n');
+
+  return instructions;
+}
+
+function escapeCSV(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+export function validateStockUpdateCSV(csvContent: string): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const rows = csvContent.split('\n').filter(row => row.trim() && !row.startsWith('#'));
+  
+  if (rows.length < 2) {
+    errors.push('CSV must contain at least a header row and one data row');
+    return { isValid: false, errors };
+  }
+
+  const headers = rows[0].split(',');
+  if (headers.length !== 2 || headers[0] !== 'identifier' || headers[1] !== 'quantity_change') {
+    errors.push('Invalid headers. Expected: identifier,quantity_change');
+    return { isValid: false, errors };
+  }
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const [identifier, quantity_change] = row.split(',');
+
+    if (!identifier?.trim()) {
+      errors.push(`Row ${i + 1}: Missing identifier (SKU or product ID)`);
+    }
+
+    const quantity = parseInt(quantity_change?.trim() || '', 10);
+    if (isNaN(quantity)) {
+      errors.push(`Row ${i + 1}: Invalid quantity_change value`);
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+export function validateProductCSV(csvContent: string): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const rows = csvContent.split('\n').filter(row => row.trim());
+  
+  if (rows.length < 2) {
+    errors.push('CSV must contain at least a header row and one data row');
+    return { isValid: false, errors };
+  }
+
+  const headers = rows[0].split(',');
+  const requiredHeaders = [
+    'name',
+    'sku',
+    'unit_of_measure',
+    'quantity',
+    'retail_price'
+  ];
+
+  const missingHeaders = requiredHeaders.filter(header => !headers.includes(header));
+  if (missingHeaders.length > 0) {
+    errors.push(`Missing required headers: ${missingHeaders.join(', ')}`);
+    return { isValid: false, errors };
+  }
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const values = row.split(',');
+    const rowData = Object.fromEntries(headers.map((header, index) => [header, values[index]]));
+
+    if (!rowData.name?.trim()) {
+      errors.push(`Row ${i + 1}: Missing product name`);
+    }
+
+    if (!rowData.unit_of_measure?.trim()) {
+      errors.push(`Row ${i + 1}: Missing unit of measure`);
+    }
+
+    const quantity = parseInt(rowData.quantity?.trim() || '', 10);
+    if (isNaN(quantity) || quantity < 0) {
+      errors.push(`Row ${i + 1}: Invalid quantity value`);
+    }
+
+    const retailPrice = parseFloat(rowData.retail_price?.trim() || '');
+    if (isNaN(retailPrice) || retailPrice < 0) {
+      errors.push(`Row ${i + 1}: Invalid retail price value`);
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+} 

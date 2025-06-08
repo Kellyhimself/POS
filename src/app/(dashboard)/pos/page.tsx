@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import {useMutation } from '@tanstack/react-query';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,13 +10,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ProductGrid } from '@/components/products/ProductGrid';
 import { Cart } from '@/components/cart/Cart';
-import { syncService } from '@/lib/sync';
 import { ReceiptActions } from '@/components/receipt/ReceiptActions';
 import { Database } from '@/types/supabase';
+import { useQueryClient } from '@tanstack/react-query';
+import { useSync } from '@/hooks/useSync';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -77,41 +76,29 @@ interface MpesaResponse {
 }
 
 const POSPage = () => {
-  const { user, storeId, isOnline } = useAuth();
-  const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const { user, storeId, isOnline, userMetadata } = useAuth();
   const [phone, setPhone] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa'>('cash');
   const [vatEnabled, setVatEnabled] = useState(true);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<TransactionResponse['receipt'] | null>(null);
+  const [cashAmount, setCashAmount] = useState<number>(0);
+  const [shouldRefetchProducts, setShouldRefetchProducts] = useState(false);
+  const [discountType, setDiscountType] = useState<'percentage' | 'cash' | null>(null);
+  const [discountValue, setDiscountValue] = useState<number>(0);
+  const { saveSale, updateStock } = useSync(storeId || '');
+  const queryClient = useQueryClient();
 
   console.log('POS Page - Auth State:', { user, storeId, isOnline });
-
-  // Query for products
-  const { data: products, isLoading: isLoadingProducts } = useQuery({
-    queryKey: ['products', storeId],
-    queryFn: async () => {
-      if (!storeId) return [];
-      try {
-        return await syncService.getProducts(storeId);
-      } catch (error) {
-        console.error('Error fetching products:', error);
-        throw error;
-      }
-    },
-    enabled: !!storeId,
-  });
-
-  console.log('POS Page - Query State:', { products, isLoadingProducts });
 
   // Add to cart mutation
   const addToCartMutation = useMutation({
     mutationFn: async ({ product, isWholesale }: { product: Product; isWholesale: boolean }) => {
-      const quantity = 1;
+      // Set initial quantity based on sale mode and minimum threshold
+      const minQuantity = isWholesale ? (product.wholesale_threshold || 1) : 1;
       const price = isWholesale ? (product.wholesale_price ?? 0) : (product.retail_price ?? 0);
-      const vatAmount = vatEnabled ? (price * 0.16) : 0;
+      const vatAmount = vatEnabled && product.vat_status ? (price * 0.16) : 0;
       const displayPrice = price + vatAmount;
 
       // Check if item already exists in cart (same product and sale mode)
@@ -120,34 +107,46 @@ const POSPage = () => {
       );
 
       if (existingIndex !== -1) {
-        const updatedCart = [...cart];
-        const item = updatedCart[existingIndex];
-        item.quantity += quantity;
-        item.vat_amount = vatEnabled ? (item.price * 0.16) : 0;
-        setCart(updatedCart);
+        setCart(prevCart => {
+          const updatedCart = [...prevCart];
+          const item = updatedCart[existingIndex];
+          // When adding to existing item, increment by the minimum threshold for wholesale
+          const incrementAmount = isWholesale ? (product.wholesale_threshold || 1) : 1;
+          item.quantity += incrementAmount;
+          item.vat_amount = vatEnabled && product.vat_status ? (item.price * 0.16) : 0;
+          item.displayPrice = item.price + item.vat_amount;
+          return updatedCart;
+        });
       } else {
         const cartItem: CartItem = {
           product,
-          quantity,
+          quantity: minQuantity,
           price,
           vat_amount: vatAmount,
           displayPrice,
           saleMode: isWholesale ? 'wholesale' : 'retail'
         };
-        setCart([cartItem, ...cart]);
+        setCart(prevCart => [cartItem, ...prevCart]);
       }
     },
   });
 
   // Quantity adjustment handlers
   const handleQuantityChange = (idx: number, newQty: number) => {
-    if (newQty < 1) return;
-    
-    setCart(cart => {
-      const updatedCart = [...cart];
+    setCart(prevCart => {
+      const updatedCart = [...prevCart];
       const item = updatedCart[idx];
+      
+      // Ensure quantity meets minimum threshold for wholesale items
+      if (item.saleMode === 'wholesale' && item.product.wholesale_threshold) {
+        newQty = Math.max(newQty, item.product.wholesale_threshold);
+      } else if (newQty < 1) {
+        newQty = 1;
+      }
+
       item.quantity = newQty;
-      item.vat_amount = vatEnabled ? (item.price * 0.16) : 0;
+      item.vat_amount = vatEnabled && item.product.vat_status ? (item.price * 0.16) : 0;
+      item.displayPrice = item.price + item.vat_amount;
       return updatedCart;
     });
   };
@@ -156,66 +155,144 @@ const POSPage = () => {
     setCart(cart => cart.filter((_, i) => i !== idx));
   };
 
+  // Handle VAT toggle
+  const handleVatToggle = (enabled: boolean) => {
+    setVatEnabled(enabled);
+    setCart(cart => cart.map(item => ({
+      ...item,
+      vat_amount: enabled && item.product.vat_status ? (item.price * 0.16) : 0,
+      displayPrice: item.price + (enabled && item.product.vat_status ? (item.price * 0.16) : 0)
+    })));
+  };
+
+  // Calculate balance for cash payments
+  const calculateBalance = () => {
+    if (!receiptData || paymentMethod !== 'cash') return 0;
+    return cashAmount - receiptData.sale.total;
+  };
+
+  // Handle cash amount change
+  const handleCashAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value) || 0;
+    setCashAmount(value);
+  };
+
   // Payment mutation
   const paymentMutation = useMutation({
     mutationFn: async () => {
       if (!storeId) throw new Error('No store selected');
-      const total_amount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const vat_total = cart.reduce((sum, item) => sum + (item.vat_amount * item.quantity), 0);
+
+      // Validate minimum thresholds for wholesale items
+      const invalidItems = cart.filter(
+        item => item.saleMode === 'wholesale' && 
+        item.product.wholesale_threshold && 
+        item.quantity < item.product.wholesale_threshold
+      );
+
+      if (invalidItems.length > 0) {
+        const itemNames = invalidItems.map(item => item.product.name).join(', ');
+        throw new Error(`The following items do not meet the minimum wholesale quantity: ${itemNames}`);
+      }
+
+      const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const vatTotal = cart.reduce((sum, item) => sum + (item.vat_amount * item.quantity), 0);
+      
+      // Calculate discount
+      const discountAmount = discountType === 'percentage' 
+        ? (subtotal * (discountValue / 100))
+        : discountType === 'cash' 
+          ? Math.min(discountValue, subtotal)
+          : 0;
+      
+      const total_amount = subtotal + vatTotal - discountAmount;
 
       // Process payment based on method
       if (paymentMethod === 'mpesa') {
         if (!phone) throw new Error('Phone number is required for M-Pesa payment');
         
-        const mpesaResponse = await fetch('/api/mpesa', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            amount: total_amount, 
-            phone, 
-            store_id: storeId 
-          }),
-        });
+        if (isOnline) {
+          const mpesaResponse = await fetch('/api/mpesa', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              amount: total_amount, 
+              phone, 
+              store_id: storeId 
+            }),
+          });
 
-        if (!mpesaResponse.ok) {
-          throw new Error('M-Pesa payment failed');
-        }
+          if (!mpesaResponse.ok) {
+            throw new Error('M-Pesa payment failed');
+          }
 
-        const mpesaData: MpesaResponse = await mpesaResponse.json();
-        if (!mpesaData.success) {
-          throw new Error(mpesaData.responseDescription);
+          const mpesaData: MpesaResponse = await mpesaResponse.json();
+          if (!mpesaData.success) {
+            throw new Error(mpesaData.responseDescription);
+          }
         }
       }
 
-      // Create transaction record
-      const transactionResponse = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          store_id: storeId,
-          products: cart.map(item => ({
-            id: item.product.id,
-            name: item.product.name,
-            quantity: item.quantity,
-            price: item.displayPrice || item.price,
-            vat_amount: item.vat_amount,
-            saleMode: item.saleMode || 'retail',
-            displayPrice: item.displayPrice || item.price
-          })),
-          payment_method: paymentMethod,
-          total_amount,
-          vat_total,
-          customer_phone: paymentMethod === 'mpesa' ? phone : null
-        }),
+      // Save the sale
+      const saleResult = await saveSale({
+        store_id: storeId,
+        products: cart.map(item => ({
+          id: item.product.id,
+          quantity: item.quantity,
+          displayPrice: item.displayPrice || item.price,
+          vat_amount: item.vat_amount
+        })),
+        payment_method: paymentMethod,
+        total_amount,
+        vat_total: vatTotal,
+        discount_amount: discountAmount,
+        discount_type: discountType
       });
 
-      if (!transactionResponse.ok) {
-        const errorData = await transactionResponse.json();
-        throw new Error(errorData.error || 'Failed to create transaction');
-      }
+      // Invalidate and refetch products query
+      await queryClient.invalidateQueries({ queryKey: ['products', storeId] });
+      await queryClient.refetchQueries({ queryKey: ['products', storeId] });
 
-      const transactionData: TransactionResponse = await transactionResponse.json();
-      return transactionData;
+      // Create receipt data structure
+      const receiptData: TransactionResponse = {
+        success: true,
+        transaction: {
+          id: saleResult.id,
+          store_id: saleResult.store_id,
+          total_amount: saleResult.total_amount,
+          vat_total: saleResult.vat_total,
+          payment_method: saleResult.payment_method,
+          customer_phone: paymentMethod === 'mpesa' ? phone : null,
+          timestamp: saleResult.timestamp
+        },
+        receipt: {
+          store: {
+            id: storeId,
+            name: userMetadata?.store_name || 'Store',
+            address: userMetadata?.store_address || 'Location'
+          },
+          sale: {
+            id: saleResult.id,
+            created_at: saleResult.timestamp,
+            payment_method: saleResult.payment_method,
+            subtotal: subtotal,
+            vat_total: saleResult.vat_total,
+            discount_amount: discountAmount,
+            discount_type: discountType,
+            total: saleResult.total_amount,
+            products: cart.map(item => ({
+              id: item.product.id,
+              name: item.product.name,
+              quantity: item.quantity,
+              price: item.displayPrice || item.price,
+              vat_amount: item.vat_amount,
+              vat_status: 'included',
+              total: (item.displayPrice || item.price) * item.quantity
+            }))
+          }
+        }
+      };
+
+      return receiptData;
     },
     onSuccess: (transactionData: TransactionResponse) => {
       toast.success('Success', {
@@ -223,10 +300,13 @@ const POSPage = () => {
       });
       setCart([]);
       setPhone('');
-      console.log('Transaction Data:', transactionData);
-      console.log('Receipt Data:', transactionData.receipt);
+      setDiscountType(null);
+      setDiscountValue(0);
       setReceiptData(transactionData.receipt);
       setShowReceipt(true);
+      setShouldRefetchProducts(true);
+      // Reset the refetch flag after a short delay
+      setTimeout(() => setShouldRefetchProducts(false), 100);
     },
     onError: (error: Error) => {
       toast.error('Error', {
@@ -235,78 +315,43 @@ const POSPage = () => {
     },
   });
 
-  // Sync handler
-  const handleSync = async () => {
-    if (!storeId) return;
-    setIsSyncing(true);
-    try {
-      await syncService.initialSync(storeId);
-      toast.success('Sync completed successfully');
-      setIsSyncDialogOpen(false);
-    } catch (error) {
-      toast.error('Sync failed', {
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
-      });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex flex-col lg:flex-row h-screen bg-gray-100">
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-4">
-            <ProductGrid onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} />
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* Product Grid - Full width on mobile, flex-1 on desktop */}
+          <div className="flex-1 overflow-y-auto p-2 sm:p-4">
+            <ProductGrid 
+              onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} 
+              shouldRefetch={shouldRefetchProducts}
+            />
           </div>
-          <div className="w-96 bg-white shadow-lg">
+
+          {/* Cart - Full width on mobile, fixed width on desktop */}
+          <div className="w-full lg:w-96 bg-white shadow-lg">
             <Cart
               items={cart}
               onQuantityChange={handleQuantityChange}
               onRemoveItem={handleRemoveItem}
               onPaymentMethodChange={setPaymentMethod}
-              onVatToggle={setVatEnabled}
+              onVatToggle={handleVatToggle}
               vatEnabled={vatEnabled}
               paymentMethod={paymentMethod}
               phone={phone}
               onPhoneChange={setPhone}
               onCheckout={() => paymentMutation.mutate()}
               isProcessing={paymentMutation.isPending}
+              discountType={discountType}
+              discountValue={discountValue}
+              onDiscountTypeChange={setDiscountType}
+              onDiscountValueChange={setDiscountValue}
             />
           </div>
         </div>
       </div>
 
-      <Dialog open={isSyncDialogOpen} onOpenChange={setIsSyncDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-semibold text-purple-900">Sync Data</DialogTitle>
-            <DialogDescription className="text-gray-600">
-              This will synchronize your offline data with the server. Make sure you have a stable internet connection.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end space-x-3 mt-4">
-            <Button 
-              variant="outline" 
-              onClick={() => setIsSyncDialogOpen(false)}
-              className="border-purple-200 hover:bg-purple-50 text-purple-700"
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleSync} 
-              disabled={isSyncing}
-              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
-            >
-              {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {isSyncing ? 'Syncing...' : 'Start Sync'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[95vw] max-w-md p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Transaction Complete</DialogTitle>
             <DialogDescription>
@@ -315,6 +360,35 @@ const POSPage = () => {
           </DialogHeader>
           {receiptData && (
             <div className="py-4">
+              {paymentMethod === 'cash' && (
+                <div className="mb-4 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label htmlFor="cashAmount" className="text-sm font-medium">
+                      Amount Received (KES)
+                    </label>
+                    <input
+                      id="cashAmount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashAmount}
+                      onChange={handleCashAmountChange}
+                      className="w-full sm:w-32 px-2 py-1 border rounded"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Total Amount:</span>
+                    <span>KES {receiptData.sale.total.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm font-medium">
+                    <span>Balance:</span>
+                    <span className={calculateBalance() >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      KES {calculateBalance().toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
               <ReceiptActions 
                 receipt={{
                   id: receiptData.sale.id,
@@ -326,12 +400,15 @@ const POSPage = () => {
                     vat_status: product.vat_status,
                     total: product.total
                   })),
-                  subtotal: receiptData.sale.subtotal,
-                  vat_total: receiptData.sale.vat_total,
                   total: receiptData.sale.total,
-                  store: receiptData.store,
-                  created_at: receiptData.sale.created_at,
-                  payment_method: receiptData.sale.payment_method
+                  vat_total: receiptData.sale.vat_total,
+                  discount_amount: receiptData.sale.discount_amount,
+                  discount_type: receiptData.sale.discount_type,
+                  discount_value: discountValue,
+                  payment_method: receiptData.sale.payment_method,
+                  phone: paymentMethod === 'mpesa' ? phone : undefined,
+                  cash_amount: paymentMethod === 'cash' ? cashAmount : undefined,
+                  balance: paymentMethod === 'cash' ? calculateBalance() : undefined
                 }}
               />
             </div>

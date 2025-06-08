@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
         }
       } catch (error) {
-        console.error('Error validating offline token:', error);
+        // Silent error handling
       }
     }
     return null;
@@ -72,9 +72,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const stateCache = await caches.open('app-state-v1');
         await stateCache.put('/app-state', new Response(JSON.stringify(state)));
-        console.log('💾 AuthProvider - Cached app state:', state);
       } catch (error) {
-        console.warn('⚠️ AuthProvider - Error caching state:', error);
+        // Silent error handling
       }
     }
   };
@@ -87,11 +86,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const cachedState = await stateCache.match('/app-state');
         if (cachedState) {
           const stateData = await cachedState.json();
-          console.log('💾 AuthProvider - Found cached state:', stateData);
           return stateData;
         }
       } catch (error) {
-        console.warn('⚠️ AuthProvider - Error getting cached state:', error);
+        // Silent error handling
       }
     }
     return null;
@@ -104,7 +102,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       store_name: storeName
     });
     document.cookie = `offline_token=${offlineToken}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
-    console.log('🍪 AuthProvider - Set offline token cookie with store name:', storeName);
   };
 
   // Function to fetch and cache store name
@@ -115,27 +112,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Try to get from cache first
       const cachedState = await getCachedAppState();
       if (cachedState?.store?.name) {
-        console.log('📦 AuthProvider - Found store name in cache:', cachedState.store.name);
         setStoreName(cachedState.store.name);
         return;
       }
 
       // If not in cache and online, fetch from API
       if (navigator.onLine) {
-        console.log('🌐 AuthProvider - Fetching store name from API for store:', storeId);
         const { data: storeData, error } = await supabase
           .from('stores')
           .select('name')
           .eq('id', storeId)
           .single();
         
-        if (error) {
-          console.error('❌ AuthProvider - Error fetching store name:', error);
-          return;
-        }
+        if (error) return;
         
         if (storeData?.name) {
-          console.log('✅ AuthProvider - Fetched store name:', storeData.name);
           setStoreName(storeData.name);
           // Cache the updated state
           const currentState = await getCachedAppState();
@@ -150,17 +141,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (error) {
-      console.error('❌ AuthProvider - Error in fetchAndCacheStoreName:', error);
+      // Silent error handling
     }
   };
 
   // Handle offline user state
   const handleOfflineUser = async () => {
-    console.log('📴 AuthProvider - Handling offline user state');
     try {
       const offlineContext = getOfflineContext();
       if (offlineContext) {
-        console.log('✅ AuthProvider - Found valid offline context:', offlineContext);
         const { userId, storeId, userMetadata } = offlineContext;
         
         // Create a mock session for offline mode
@@ -194,7 +183,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         // Get store name from user metadata in offline token
         const storeName = userMetadata?.store_name;
-        console.log('📦 AuthProvider - Retrieved store name from offline token:', storeName);
         
         if (storeName) {
           setStoreName(storeName);
@@ -210,14 +198,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           lastSync: Date.now()
         });
       } else {
-        console.log('❌ AuthProvider - No valid offline context found');
         setUser(null);
         setSession(null);
         setStoreId(null);
         setStoreName(null);
       }
     } catch (error) {
-      console.error('❌ AuthProvider - Error handling offline user:', error);
       setUser(null);
       setSession(null);
       setStoreId(null);
@@ -227,7 +213,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleOnline = async () => {
-      console.log('🌐 AuthProvider - Network status changed to online');
       setIsOnline(true);
       setLoading(true);
       try {
@@ -239,29 +224,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchAndCacheStoreName(session.user.user_metadata.store_id);
         }
       } catch (error) {
-        console.error('Error during online transition:', error);
+        // Silent error handling
       } finally {
         setLoading(false);
       }
     };
 
     const handleOffline = async () => {
-      console.log('📴 AuthProvider - Network status changed to offline');
       setIsOnline(false);
-      setLoading(true);
-      try {
-        await handleOfflineUser();
-      } catch (error) {
-        console.error('Error during offline transition:', error);
-      } finally {
-        setLoading(false);
-      }
+      await handleOfflineUser();
     };
 
     // Set initial network status and handle offline state if needed
     const initialNetworkStatus = navigator.onLine;
     setIsOnline(initialNetworkStatus);
-    console.log('📡 AuthProvider - Initial network status:', initialNetworkStatus ? 'online' : 'offline');
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -279,12 +255,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Update the checkUser function to handle offline state properly
   useEffect(() => {
     const checkUser = async () => {
-      console.log('🔍 AuthProvider - Checking user state');
       setLoading(true);
       try {
         // First check if we're offline
         if (!navigator.onLine) {
-          console.log('📴 AuthProvider - Offline mode detected');
           setIsOnline(false);
           await handleOfflineUser();
           return;
@@ -294,12 +268,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('❌ AuthProvider - Error getting session:', error);
-          throw error;
+          // Only fall back to offline if we're actually offline
+          if (!navigator.onLine) {
+            await handleOfflineUser();
+          } else {
+            setUser(null);
+            setSession(null);
+            setStoreId(null);
+            setStoreName(null);
+          }
+          return;
         }
 
         if (session?.user) {
-          console.log('✅ AuthProvider - Online user authenticated:', session.user.id);
           setUser(session.user);
           setSession(session);
           setStoreId(session.user.user_metadata.store_id);
@@ -337,12 +318,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           syncService.startSync();
           await syncService.initialSync(session.user.user_metadata.store_id);
         } else {
-          console.log('🔍 AuthProvider - No online session, checking for offline user');
-          await handleOfflineUser();
+          // Check for offline context first
+          const offlineContext = getOfflineContext();
+          if (offlineContext) {
+            await handleOfflineUser();
+          } else {
+            setUser(null);
+            setSession(null);
+            setStoreId(null);
+            setStoreName(null);
+          }
         }
       } catch (error) {
-        console.error('❌ AuthProvider - Error checking user:', error);
-        if (navigator.onLine) {
+        // Check for offline context in case of error
+        const offlineContext = getOfflineContext();
+        if (offlineContext) {
+          await handleOfflineUser();
+        } else {
           setUser(null);
           setStoreId(null);
           setStoreName(null);
@@ -355,7 +347,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔄 AuthProvider - Auth state changed:', event);
       if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user);
         setSession(session);
@@ -487,7 +478,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { data: null, error: new AuthError('No valid offline credentials found. Please login while online first.') };
         }
       } catch (error) {
-        console.error('Error in signIn:', error);
         return { data: null, error: error as AuthError };
       }
     },

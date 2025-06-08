@@ -247,6 +247,50 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_product: {
+        Args: {
+          p_product: Database["public"]["CompositeTypes"]["product_input"]
+        }
+        Returns: {
+          category: string | null
+          cost_price: number
+          id: string
+          name: string
+          parent_product_id: string | null
+          quantity: number
+          retail_price: number | null
+          selling_price: number
+          sku: string | null
+          store_id: string | null
+          unit_of_measure: string
+          units_per_pack: number
+          vat_status: boolean | null
+          wholesale_price: number | null
+          wholesale_threshold: number | null
+        }
+      }
+      create_products_batch: {
+        Args: {
+          p_products: Database["public"]["CompositeTypes"]["product_input"][]
+        }
+        Returns: {
+          category: string | null
+          cost_price: number
+          id: string
+          name: string
+          parent_product_id: string | null
+          quantity: number
+          retail_price: number | null
+          selling_price: number
+          sku: string | null
+          store_id: string | null
+          unit_of_measure: string
+          units_per_pack: number
+          vat_status: boolean | null
+          wholesale_price: number | null
+          wholesale_threshold: number | null
+        }[]
+      }
       create_sale: {
         Args: {
           p_store_id: string
@@ -256,10 +300,6 @@ export type Database = {
           p_vat_total: number
         }
         Returns: string
-      }
-      execute_bulk_update: {
-        Args: { p_sql: string; p_store_id: string }
-        Returns: undefined
       }
       get_product_history: {
         Args: { p_product_id: string }
@@ -286,16 +326,74 @@ export type Database = {
         Args: {
           p_product_id: string
           p_quantity_change: number
-          p_store_id: string
+          p_store_id?: string
         }
-        Returns: boolean
+        Returns: {
+          category: string | null
+          cost_price: number
+          id: string
+          name: string
+          parent_product_id: string | null
+          quantity: number
+          retail_price: number | null
+          selling_price: number
+          sku: string | null
+          store_id: string | null
+          unit_of_measure: string
+          units_per_pack: number
+          vat_status: boolean | null
+          wholesale_price: number | null
+          wholesale_threshold: number | null
+        }
+      }
+      update_stock_batch: {
+        Args: {
+          p_updates: Database["public"]["CompositeTypes"]["stock_update_input"][]
+        }
+        Returns: {
+          category: string | null
+          cost_price: number
+          id: string
+          name: string
+          parent_product_id: string | null
+          quantity: number
+          retail_price: number | null
+          selling_price: number
+          sku: string | null
+          store_id: string | null
+          unit_of_measure: string
+          units_per_pack: number
+          vat_status: boolean | null
+          wholesale_price: number | null
+          wholesale_threshold: number | null
+        }[]
       }
     }
     Enums: {
       [_ in never]: never
     }
     CompositeTypes: {
-      [_ in never]: never
+      product_input: {
+        id: string | null
+        name: string | null
+        sku: string | null
+        category: string | null
+        store_id: string | null
+        quantity: number | null
+        retail_price: number | null
+        wholesale_price: number | null
+        wholesale_threshold: number | null
+        vat_status: boolean | null
+        cost_price: number | null
+        unit_of_measure: string | null
+        units_per_pack: number | null
+        parent_product_id: string | null
+        selling_price: number | null
+      }
+      stock_update_input: {
+        product_id: string | null
+        quantity_change: number | null
+      }
     }
   }
 }

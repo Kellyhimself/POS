@@ -2,55 +2,53 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { useOfflineProducts } from '@/lib/hooks/useOfflineProducts';
 import { usePathname } from 'next/navigation';
 import { WifiOff } from 'lucide-react';
+import { syncService } from '@/lib/sync';
 
-interface LoadingScreenProps {
-  children: React.ReactNode;
-}
-
-export function LoadingScreen({ children }: LoadingScreenProps) {
-  const { loading: authLoading, isOnline, storeId } = useAuth();
+export function LoadingScreen() {
+  const { isOnline, user } = useAuth();
   const pathname = usePathname();
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Loading...');
-
-  // Get products loading state if we're on a page that needs products
-  const needsProducts = ['/pos', '/inventory', '/dashboard'].includes(pathname);
-  const { isLoading: productsLoading } = useOfflineProducts(needsProducts && storeId ? storeId : '');
 
   useEffect(() => {
-    // Determine loading state and message
-    if (authLoading) {
-      setLoadingMessage(isOnline ? 'Authenticating...' : 'Checking offline access...');
-      setIsLoading(true);
-    } else if (needsProducts && productsLoading) {
-      setLoadingMessage(isOnline ? 'Loading products...' : 'Loading cached products...');
-      setIsLoading(true);
-    } else {
-      setIsLoading(false);
-    }
-  }, [authLoading, productsLoading, pathname, isOnline, needsProducts]);
+    const loadData = async () => {
+      if (!user?.user_metadata?.store_id) return;
 
-  if (!isLoading) {
-    return <>{children}</>;
-  }
+      try {
+        // Use syncService to get products
+        await syncService.getProducts(user.user_metadata.store_id);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error loading data:', error);
+        setIsLoading(false);
+      }
+    };
 
-  return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50">
-      <div className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          <p className="text-lg font-medium text-foreground">{loadingMessage}</p>
-          {!isOnline && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <WifiOff className="h-4 w-4" />
-              <span>Working offline</span>
-            </div>
-          )}
+    loadData();
+  }, [user?.user_metadata?.store_id]);
+
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (!isOnline && pathname !== '/offline') {
+    return (
+      <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <WifiOff className="h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">You are offline</p>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 } 

@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
+import Navbar from '@/components/layout/Navbar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { cn } from '@/lib/utils';
 
 interface AppState {
   user: any | null;
@@ -27,6 +29,32 @@ export default function DashboardLayout({
     isOnline: navigator.onLine
   });
   const [shouldRedirect, setShouldRedirect] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Listen for sidebar state changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const preference = localStorage.getItem('sidebarPreference');
+      setSidebarOpen(preference === 'open');
+    };
+
+    // Initial check
+    handleStorageChange();
+
+    // Listen for changes from other tabs/windows
+    window.addEventListener('storage', handleStorageChange);
+
+    // Listen for changes from the current window
+    const handleCustomEvent = (e: CustomEvent) => {
+      setSidebarOpen(e.detail === 'open');
+    };
+    window.addEventListener('sidebarChange', handleCustomEvent as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('sidebarChange', handleCustomEvent as EventListener);
+    };
+  }, []);
 
   // Update app state when auth state changes
   useEffect(() => {
@@ -117,9 +145,15 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen bg-gray-100">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-8">
-        {children}
-      </main>
+      <div className={cn(
+        "flex-1 transition-all duration-300",
+        sidebarOpen ? "lg:ml-64" : "lg:ml-20"
+      )}>
+        <Navbar isOnline={isOnline} storeName={storeName || undefined} />
+        <main className="pt-16 p-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 } 

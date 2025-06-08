@@ -30,6 +30,10 @@ interface CartProps {
   phone: string;
   onPhoneChange: (phone: string) => void;
   isProcessing?: boolean;
+  discountType: 'percentage' | 'cash' | null;
+  discountValue: number;
+  onDiscountTypeChange: (type: 'percentage' | 'cash' | null) => void;
+  onDiscountValueChange: (value: number) => void;
 }
 
 export function Cart({
@@ -44,14 +48,22 @@ export function Cart({
   phone,
   onPhoneChange,
   isProcessing = false,
+  discountType,
+  discountValue,
+  onDiscountTypeChange,
+  onDiscountValueChange,
 }: CartProps) {
-  const subtotal = items.reduce((sum, item) => {
-    const price = item.saleMode === 'wholesale' ? (item.product.wholesale_price ?? 0) : (item.product.retail_price ?? 0);
-    return sum + (price * item.quantity);
-  }, 0);
-  
+  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const vatTotal = items.reduce((sum, item) => sum + (item.vat_amount * item.quantity), 0);
-  const total = subtotal + vatTotal;
+  
+  // Calculate discount
+  const discountAmount = discountType === 'percentage' 
+    ? (subtotal * (discountValue / 100))
+    : discountType === 'cash' 
+      ? Math.min(discountValue, subtotal) // Ensure discount doesn't exceed subtotal
+      : 0;
+  
+  const total = subtotal + vatTotal - discountAmount;
 
   return (
     <div className="h-full flex flex-col bg-[#F7F9FC]">
@@ -79,11 +91,11 @@ export function Cart({
                 <div className="flex items-center justify-between mt-1">
                   <div className="space-y-0.5">
                     <p className="text-xs text-gray-600">
-                      {item.saleMode === 'wholesale' ? 'Wholesale:' : 'Retail:'} KES {item.price.toFixed(2)}
+                      {item.saleMode === 'wholesale' ? 'Wholesale:' : 'Retail:'} KES {item.displayPrice?.toFixed(2) || item.price.toFixed(2)}
                     </p>
-                    {item.saleMode === 'wholesale' && item.product.wholesale_threshold && (
+                    {item.vat_amount > 0 && (
                       <p className="text-xs text-gray-500">
-                        Min: {item.product.wholesale_threshold}
+                        VAT: KES {item.vat_amount.toFixed(2)}
                       </p>
                     )}
                   </div>
@@ -108,6 +120,11 @@ export function Cart({
                     </Button>
                   </div>
                 </div>
+                <div className="mt-1 text-right">
+                  <p className="text-xs font-medium text-gray-900">
+                    Total: KES {((item.displayPrice || item.price) * item.quantity).toFixed(2)}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
@@ -126,6 +143,43 @@ export function Cart({
               <span className="font-medium text-gray-900">KES {vatTotal.toFixed(2)}</span>
             </div>
           )}
+          
+          {/* Discount Section */}
+          <div className="space-y-2 pt-2 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-600">Discount:</span>
+              <div className="flex items-center gap-2">
+                <select
+                  value={discountType || ''}
+                  onChange={(e) => onDiscountTypeChange(e.target.value as 'percentage' | 'cash' | null)}
+                  className="text-xs border rounded px-1 py-0.5"
+                >
+                  <option value="">No Discount</option>
+                  <option value="percentage">Percentage (%)</option>
+                  <option value="cash">Cash (KES)</option>
+                </select>
+                {discountType && (
+                  <input
+                    type="number"
+                    min="0"
+                    max={discountType === 'percentage' ? 100 : subtotal}
+                    step={discountType === 'percentage' ? 1 : 0.01}
+                    value={discountValue}
+                    onChange={(e) => onDiscountValueChange(Number(e.target.value))}
+                    className="w-20 text-xs border rounded px-1 py-0.5"
+                    placeholder={discountType === 'percentage' ? '%' : 'KES'}
+                  />
+                )}
+              </div>
+            </div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between text-xs text-red-600">
+                <span>Discount Amount:</span>
+                <span>-KES {discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-between font-semibold pt-1 border-t border-gray-200">
             <span className="text-sm text-gray-900">Total:</span>
             <span className="text-sm text-gray-900">KES {total.toFixed(2)}</span>

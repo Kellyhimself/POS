@@ -2,14 +2,14 @@ import nextPWA from 'next-pwa';
 
 const withPWA = nextPWA({
   dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
+  disable: false,
   register: true,
   scope: '/',
   skipWaiting: true,
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,
-      handler: 'CacheFirst',
+      handler: 'NetworkFirst',
       options: {
         cacheName: 'google-fonts',
         expiration: {

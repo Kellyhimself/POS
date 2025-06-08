@@ -1,17 +1,13 @@
--- Drop the old function if it exists
-DROP FUNCTION IF EXISTS public.create_sale;
-
--- Create the new function that handles multiple products
 CREATE OR REPLACE FUNCTION create_sale(
   p_store_id UUID,
   p_products JSONB,
   p_payment_method TEXT,
-  p_total_amount DECIMAL,
-  p_vat_total DECIMAL
+  p_total_amount NUMERIC,
+  p_vat_total NUMERIC,
+  p_is_sync BOOLEAN DEFAULT FALSE
 )
 RETURNS UUID
 LANGUAGE plpgsql
-SECURITY DEFINER
 AS $$
 DECLARE
   v_first_transaction_id UUID;
@@ -75,16 +71,19 @@ BEGIN
         v_vat_amount,
         p_payment_method,
         CURRENT_TIMESTAMP,
-        FALSE
+        TRUE
       )
       RETURNING id INTO v_first_transaction_id;
 
-      -- Update stock
-      PERFORM update_stock(
-        v_product_id,
-        -v_quantity,
-        p_store_id
-      );
+      -- Only update stock for online sales (non-sync operations)
+      IF NOT p_is_sync THEN
+        -- For direct online sales, use the reduction operation
+        PERFORM update_stock(
+          v_product_id,
+          -v_quantity,
+          p_store_id
+        );
+      END IF;
     END LOOP;
 
     RETURN v_first_transaction_id;

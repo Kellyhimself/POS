@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Printer, Download } from 'lucide-react';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 interface ReceiptItem {
   name: string;
@@ -16,8 +17,13 @@ interface Receipt {
   items: ReceiptItem[];
   total: number;
   vat_total: number;
+  discount_amount?: number;
+  discount_type?: 'percentage' | 'cash' | null;
+  discount_value?: number;
   payment_method: string;
   phone?: string;
+  cash_amount?: number;
+  balance?: number;
 }
 
 interface ReceiptActionsProps {
@@ -25,6 +31,7 @@ interface ReceiptActionsProps {
 }
 
 export function ReceiptActions({ receipt }: ReceiptActionsProps) {
+  const { storeName } = useAuth();
   console.log('ReceiptActions - Receipt Data:', receipt);
   
   if (!receipt || !receipt.items) {
@@ -40,36 +47,108 @@ export function ReceiptActions({ receipt }: ReceiptActionsProps) {
       const content = `
         <html>
           <head>
-            <title>Receipt #${receipt.id}</title>
+            <title>Receipt</title>
             <style>
-              body { font-family: monospace; padding: 20px; }
-              .header { text-align: center; margin-bottom: 20px; }
-              .items { margin: 20px 0; }
-              .item { margin: 10px 0; }
-              .total { margin-top: 20px; border-top: 1px dashed #000; padding-top: 10px; }
+              body { 
+                font-family: Arial, sans-serif; 
+                padding: 40px;
+                max-width: 800px;
+                margin: 0 auto;
+                font-size: 16px;
+                line-height: 1.6;
+              }
+              .header { 
+                text-align: center; 
+                margin-bottom: 30px;
+                border-bottom: 2px solid #000;
+                padding-bottom: 20px;
+              }
+              .header h2 {
+                font-size: 28px;
+                margin-bottom: 10px;
+              }
+              .items { 
+                margin: 30px 0;
+                border: 1px solid #000;
+                padding: 20px;
+              }
+              .item { 
+                margin: 15px 0;
+                padding: 10px;
+                border-bottom: 1px dashed #ccc;
+              }
+              .item:last-child {
+                border-bottom: none;
+              }
+              .total { 
+                margin-top: 30px; 
+                border-top: 2px solid #000; 
+                padding-top: 20px;
+                font-size: 18px;
+              }
+              .total div {
+                margin: 10px 0;
+              }
+              .discount { 
+                color: #dc2626;
+                font-weight: bold;
+              }
+              .footer { 
+                margin-top: 40px; 
+                text-align: center; 
+                font-size: 16px;
+                border-top: 1px solid #ccc;
+                padding-top: 20px;
+              }
+              .amount {
+                font-weight: bold;
+              }
+              .payment-info {
+                margin-top: 20px;
+                padding: 15px;
+                background-color: #f8f8f8;
+                border-radius: 5px;
+              }
             </style>
           </head>
           <body>
             <div class="header">
-              <h2>Receipt #${receipt.id}</h2>
+              <h2>${storeName || 'Store'}</h2>
+              <p>Receipt #${receipt.id}</p>
               <p>${new Date().toLocaleString()}</p>
             </div>
             <div class="items">
               ${receipt.items.map(item => `
                 <div class="item">
-                  <div>${item.name} x ${item.quantity}</div>
-                  <div>Price: KES ${item.price.toFixed(2)}</div>
-                  ${item.vat_status === 'enabled' ? `<div>VAT: KES ${item.vat_amount.toFixed(2)}</div>` : ''}
-                  <div>Total: KES ${item.total.toFixed(2)}</div>
+                  <div><strong>${item.name}</strong> x ${item.quantity}</div>
+                  <div>KES ${item.price.toFixed(2)} each</div>
+                  ${item.vat_amount > 0 ? `<div>VAT: KES ${item.vat_amount.toFixed(2)}</div>` : ''}
+                  <div class="amount">Total: KES ${item.total.toFixed(2)}</div>
                 </div>
               `).join('')}
             </div>
             <div class="total">
               <div>Subtotal: KES ${(receipt.total - receipt.vat_total).toFixed(2)}</div>
               <div>VAT: KES ${receipt.vat_total.toFixed(2)}</div>
-              <div><strong>Total: KES ${receipt.total.toFixed(2)}</strong></div>
-              <div>Payment Method: ${receipt.payment_method}</div>
-              ${receipt.phone ? `<div>Phone: ${receipt.phone}</div>` : ''}
+              ${receipt.discount_amount && receipt.discount_amount > 0 ? `
+                <div class="discount">
+                  Discount ${receipt.discount_type === 'percentage' && receipt.discount_value ? `(${receipt.discount_value}%)` : ''}: 
+                  -KES ${receipt.discount_amount.toFixed(2)}
+                </div>
+              ` : ''}
+              <div class="amount">Total: KES ${receipt.total.toFixed(2)}</div>
+              <div class="payment-info">
+                <div>Payment Method: ${receipt.payment_method.toUpperCase()}</div>
+                ${receipt.phone ? `<div>Phone: ${receipt.phone}</div>` : ''}
+                ${receipt.cash_amount ? `
+                  <div>Amount Received: KES ${receipt.cash_amount.toFixed(2)}</div>
+                  <div>Balance: KES ${receipt.balance?.toFixed(2)}</div>
+                ` : ''}
+              </div>
+            </div>
+            <div class="footer">
+              <p>Thank you for your purchase!</p>
+              <p>Please come again</p>
             </div>
           </body>
         </html>
@@ -86,22 +165,43 @@ export function ReceiptActions({ receipt }: ReceiptActionsProps) {
   const handleDownload = () => {
     try {
       const content = `
+==========================================
+            ${storeName || 'Store'}
+==========================================
 Receipt #${receipt.id}
 Date: ${new Date().toLocaleString()}
+==========================================
 
-Items:
+ITEMS:
 ${receipt.items.map(item => `
 ${item.name} x ${item.quantity}
-Price: KES ${item.price.toFixed(2)}
-${item.vat_status === 'enabled' ? `VAT: KES ${item.vat_amount.toFixed(2)}` : ''}
+KES ${item.price.toFixed(2)} each
+${item.vat_amount > 0 ? `VAT: KES ${item.vat_amount.toFixed(2)}` : ''}
 Total: KES ${item.total.toFixed(2)}
+------------------------------------------
 `).join('\n')}
 
+==========================================
 Subtotal: KES ${(receipt.total - receipt.vat_total).toFixed(2)}
 VAT: KES ${receipt.vat_total.toFixed(2)}
+${receipt.discount_amount && receipt.discount_amount > 0 ? `
+Discount ${receipt.discount_type === 'percentage' && receipt.discount_value ? `(${receipt.discount_value}%)` : ''}: 
+-KES ${receipt.discount_amount.toFixed(2)}
+` : ''}
 Total: KES ${receipt.total.toFixed(2)}
-Payment Method: ${receipt.payment_method}
+==========================================
+
+Payment Method: ${receipt.payment_method.toUpperCase()}
 ${receipt.phone ? `Phone: ${receipt.phone}` : ''}
+${receipt.cash_amount ? `
+Amount Received: KES ${receipt.cash_amount.toFixed(2)}
+Balance: KES ${receipt.balance?.toFixed(2)}
+` : ''}
+
+==========================================
+Thank you for your purchase!
+Please come again
+==========================================
       `;
 
       const blob = new Blob([content], { type: 'text/plain' });
@@ -121,6 +221,7 @@ ${receipt.phone ? `Phone: ${receipt.phone}` : ''}
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="text-center mb-4">
+        <div className="text-lg font-semibold text-gray-900 mb-1">{storeName || 'Store'}</div>
         <h3 className="text-lg font-semibold text-gray-900">Receipt #{receipt.id}</h3>
         <p className="text-sm text-gray-500">{new Date().toLocaleString()}</p>
       </div>
