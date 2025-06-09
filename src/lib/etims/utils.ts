@@ -1,5 +1,6 @@
 import { Database } from '@/types/supabase';
 import { createClient } from '@/lib/supabase-clients/server';
+import { calculateVAT, formatVatStatus } from '@/lib/vat/utils';
 
 type Product = Database['public']['Tables']['products']['Row'];
 type Transaction = Database['public']['Tables']['transactions']['Row'];
@@ -46,12 +47,15 @@ export const formatEtimsInvoice = (
     date: transaction.timestamp || new Date().toISOString(),
     customer_name: 'Walk-in Customer',
     customer_tax_pin: '000000000',
-    items: products.map(product => ({
-      description: product.name,
-      quantity: transaction.quantity,
-      unit_price: product.selling_price,
-      vat_amount: calculateVATAmount(product.selling_price * transaction.quantity, product.vat_status || false)
-    })),
+    items: products.map(product => {
+      const vatCalculation = calculateVAT(product.selling_price * transaction.quantity, product.vat_status || false);
+      return {
+        description: product.name,
+        quantity: transaction.quantity,
+        unit_price: product.selling_price,
+        vat_amount: vatCalculation.vatAmount
+      };
+    }),
     total_amount: transaction.total,
     vat_total: transaction.vat_amount || 0,
     store_id: storeId

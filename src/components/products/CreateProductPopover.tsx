@@ -79,6 +79,7 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
     wholesale_threshold: 1,
     cost_price: 0,
     vat_status: true,
+    input_vat_amount: 0,
     category: '',
     parent_product_id: undefined as string | undefined,
   });
@@ -100,6 +101,7 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
         wholesale_threshold: formData.wholesale_threshold,
         vat_status: formData.vat_status,
         cost_price: formData.cost_price,
+        input_vat_amount: formData.input_vat_amount,
         unit_of_measure: formData.unit_of_measure,
         units_per_pack: formData.units_per_pack,
         parent_product_id: formData.parent_product_id,
@@ -119,6 +121,7 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
         wholesale_threshold: 1,
         cost_price: 0,
         vat_status: true,
+        input_vat_amount: 0,
         category: '',
         parent_product_id: undefined,
       });
@@ -330,6 +333,20 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
                     required
                     className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="input_vat_amount" className="text-[10px] sm:text-xs font-medium text-gray-300">Input VAT Amount</Label>
+                  <Input
+                    id="input_vat_amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.input_vat_amount}
+                    onChange={(e) => setFormData(prev => ({ ...prev, input_vat_amount: parseFloat(e.target.value) }))}
+                    className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]"
+                  />
+                  <p className="text-[8px] sm:text-[10px] text-gray-400">VAT paid when purchasing this product</p>
                 </div>
 
                 <div className="space-y-1">

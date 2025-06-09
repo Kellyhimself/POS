@@ -176,9 +176,6 @@ export default function InventoryPage() {
     <div className="flex flex-col gap-4 p-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Inventory</h1>
-        <div className="relative flex items-center justify-center">
-          <CreateProductPopover storeId={storeId} />
-        </div>
       </div>
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-2">
@@ -190,6 +187,9 @@ export default function InventoryPage() {
             onChange={e => setSearch(e.target.value)}
             className="w-full md:w-64 p-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-[#0ABAB5] focus:border-transparent text-gray-800 bg-white placeholder:text-gray-400"
           />
+          <div className="relative flex items-center justify-center">
+            <CreateProductPopover storeId={storeId} />
+          </div>
         </div>
       </div>
 

@@ -17,6 +17,7 @@ import { ReceiptActions } from '@/components/receipt/ReceiptActions';
 import { Database } from '@/types/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSync } from '@/hooks/useSync';
+import { calculateVAT, formatVatStatus } from '@/lib/vat/utils';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -95,13 +96,11 @@ const POSPage = () => {
   // Add to cart mutation
   const addToCartMutation = useMutation({
     mutationFn: async ({ product, isWholesale }: { product: Product; isWholesale: boolean }) => {
-      // Set initial quantity based on sale mode and minimum threshold
       const minQuantity = isWholesale ? (product.wholesale_threshold || 1) : 1;
       const price = isWholesale ? (product.wholesale_price ?? 0) : (product.retail_price ?? 0);
-      const vatAmount = vatEnabled && product.vat_status ? (price * 0.16) : 0;
-      const displayPrice = price + vatAmount;
+      const vatCalculation = calculateVAT(price, vatEnabled && product.vat_status);
+      const displayPrice = vatCalculation.totalAmount;
 
-      // Check if item already exists in cart (same product and sale mode)
       const existingIndex = cart.findIndex(
         item => item.product.id === product.id && item.saleMode === (isWholesale ? 'wholesale' : 'retail')
       );
@@ -110,11 +109,11 @@ const POSPage = () => {
         setCart(prevCart => {
           const updatedCart = [...prevCart];
           const item = updatedCart[existingIndex];
-          // When adding to existing item, increment by the minimum threshold for wholesale
           const incrementAmount = isWholesale ? (product.wholesale_threshold || 1) : 1;
           item.quantity += incrementAmount;
-          item.vat_amount = vatEnabled && product.vat_status ? (item.price * 0.16) : 0;
-          item.displayPrice = item.price + item.vat_amount;
+          const newVatCalculation = calculateVAT(item.price, vatEnabled && item.product.vat_status);
+          item.vat_amount = newVatCalculation.vatAmount;
+          item.displayPrice = newVatCalculation.totalAmount;
           return updatedCart;
         });
       } else {
@@ -122,7 +121,7 @@ const POSPage = () => {
           product,
           quantity: minQuantity,
           price,
-          vat_amount: vatAmount,
+          vat_amount: vatCalculation.vatAmount,
           displayPrice,
           saleMode: isWholesale ? 'wholesale' : 'retail'
         };
@@ -137,7 +136,6 @@ const POSPage = () => {
       const updatedCart = [...prevCart];
       const item = updatedCart[idx];
       
-      // Ensure quantity meets minimum threshold for wholesale items
       if (item.saleMode === 'wholesale' && item.product.wholesale_threshold) {
         newQty = Math.max(newQty, item.product.wholesale_threshold);
       } else if (newQty < 1) {
@@ -145,8 +143,9 @@ const POSPage = () => {
       }
 
       item.quantity = newQty;
-      item.vat_amount = vatEnabled && item.product.vat_status ? (item.price * 0.16) : 0;
-      item.displayPrice = item.price + item.vat_amount;
+      const vatCalculation = calculateVAT(item.price, vatEnabled && item.product.vat_status);
+      item.vat_amount = vatCalculation.vatAmount;
+      item.displayPrice = vatCalculation.totalAmount;
       return updatedCart;
     });
   };
@@ -158,11 +157,14 @@ const POSPage = () => {
   // Handle VAT toggle
   const handleVatToggle = (enabled: boolean) => {
     setVatEnabled(enabled);
-    setCart(cart => cart.map(item => ({
-      ...item,
-      vat_amount: enabled && item.product.vat_status ? (item.price * 0.16) : 0,
-      displayPrice: item.price + (enabled && item.product.vat_status ? (item.price * 0.16) : 0)
-    })));
+    setCart(cart => cart.map(item => {
+      const vatCalculation = calculateVAT(item.price, enabled && item.product.vat_status);
+      return {
+        ...item,
+        vat_amount: vatCalculation.vatAmount,
+        displayPrice: vatCalculation.totalAmount
+      };
+    }));
   };
 
   // Calculate balance for cash payments
@@ -182,7 +184,6 @@ const POSPage = () => {
     mutationFn: async () => {
       if (!storeId) throw new Error('No store selected');
 
-      // Validate minimum thresholds for wholesale items
       const invalidItems = cart.filter(
         item => item.saleMode === 'wholesale' && 
         item.product.wholesale_threshold && 
@@ -197,7 +198,6 @@ const POSPage = () => {
       const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       const vatTotal = cart.reduce((sum, item) => sum + (item.vat_amount * item.quantity), 0);
       
-      // Calculate discount
       const discountAmount = discountType === 'percentage' 
         ? (subtotal * (discountValue / 100))
         : discountType === 'cash' 
@@ -285,7 +285,7 @@ const POSPage = () => {
               quantity: item.quantity,
               price: item.displayPrice || item.price,
               vat_amount: item.vat_amount,
-              vat_status: 'included',
+              vat_status: formatVatStatus(item.product.vat_status),
               total: (item.displayPrice || item.price) * item.quantity
             }))
           }

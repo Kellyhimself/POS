@@ -31,7 +31,8 @@ interface ReceiptActionsProps {
 }
 
 export function ReceiptActions({ receipt }: ReceiptActionsProps) {
-  const { storeName } = useAuth();
+  const { storeName, userMetadata } = useAuth();
+  const vatRegistrationNumber = userMetadata?.vat_registration_number || 'Pending Registration';
   console.log('ReceiptActions - Receipt Data:', receipt);
   
   if (!receipt || !receipt.items) {
@@ -109,13 +110,29 @@ export function ReceiptActions({ receipt }: ReceiptActionsProps) {
                 background-color: #f8f8f8;
                 border-radius: 5px;
               }
+              .vat-info {
+                margin-top: 10px;
+                padding: 10px;
+                background-color: #f8f8f8;
+                border-radius: 5px;
+                font-size: 14px;
+              }
+              .vat-included {
+                color: #059669;
+                font-weight: bold;
+              }
             </style>
           </head>
           <body>
             <div class="header">
               <h2>${storeName || 'Store'}</h2>
+              <p>VAT Registration No: ${vatRegistrationNumber}</p>
               <p>Receipt #${receipt.id}</p>
               <p>${new Date().toLocaleString()}</p>
+              <div class="vat-info">
+                <p class="vat-included">VAT INCLUDED IN PRICES</p>
+                <p>VAT Rate: 16%</p>
+              </div>
             </div>
             <div class="items">
               ${receipt.items.map(item => `
@@ -168,15 +185,19 @@ export function ReceiptActions({ receipt }: ReceiptActionsProps) {
 ==========================================
             ${storeName || 'Store'}
 ==========================================
+VAT Registration No: ${vatRegistrationNumber}
 Receipt #${receipt.id}
 Date: ${new Date().toLocaleString()}
+==========================================
+VAT INCLUDED IN PRICES
+VAT Rate: 16%
 ==========================================
 
 ITEMS:
 ${receipt.items.map(item => `
 ${item.name} x ${item.quantity}
-KES ${item.price.toFixed(2)} each
-${item.vat_amount > 0 ? `VAT: KES ${item.vat_amount.toFixed(2)}` : ''}
+KES ${item.price.toFixed(2)} each (VAT included)
+${item.vat_amount > 0 ? `VAT Amount: KES ${item.vat_amount.toFixed(2)}` : 'VAT Exempt'}
 Total: KES ${item.total.toFixed(2)}
 ------------------------------------------
 `).join('\n')}

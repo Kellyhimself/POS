@@ -127,7 +127,8 @@ interface ReceiptPDFProps {
 }
 
 export function ReceiptPDF({ receipt }: ReceiptPDFProps) {
-  const { storeName } = useAuth();
+  const { storeName, userMetadata } = useAuth();
+  const vatRegistrationNumber = userMetadata?.vat_registration_number || 'Pending Registration';
 
   return (
     <Document>
@@ -136,11 +137,32 @@ export function ReceiptPDF({ receipt }: ReceiptPDFProps) {
         <View style={styles.header}>
           <Text style={styles.storeName}>{storeName || 'Store'}</Text>
           <Text style={styles.receiptInfo}>
+            VAT Registration No: {vatRegistrationNumber}
+          </Text>
+          <Text style={styles.receiptInfo}>
             Receipt No: {receipt.id}
           </Text>
           <Text style={styles.receiptInfo}>
             Date: {format(new Date(), 'dd/MM/yyyy HH:mm')}
           </Text>
+          <View style={{ 
+            backgroundColor: '#f8f8f8', 
+            padding: 10, 
+            marginTop: 10,
+            borderRadius: 5
+          }}>
+            <Text style={{ 
+              color: '#059669', 
+              fontWeight: 'bold',
+              textAlign: 'center',
+              marginBottom: 5
+            }}>
+              VAT INCLUDED IN PRICES
+            </Text>
+            <Text style={{ textAlign: 'center' }}>
+              VAT Rate: 16%
+            </Text>
+          </View>
           <Text style={styles.receiptInfo}>
             Payment Method: {receipt.payment_method.toUpperCase()}
           </Text>
@@ -152,8 +174,8 @@ export function ReceiptPDF({ receipt }: ReceiptPDFProps) {
           <View style={[styles.tableRow, styles.tableHeader]}>
             <Text style={[styles.tableCell, styles.col1]}>Item</Text>
             <Text style={[styles.tableCell, styles.col2]}>Qty</Text>
-            <Text style={[styles.tableCell, styles.col3]}>Price</Text>
-            <Text style={[styles.tableCell, styles.col4]}>VAT</Text>
+            <Text style={[styles.tableCell, styles.col3]}>Price (VAT inc.)</Text>
+            <Text style={[styles.tableCell, styles.col4]}>VAT Amount</Text>
             <Text style={[styles.tableCell, styles.col5]}>Total</Text>
           </View>
 
@@ -163,7 +185,9 @@ export function ReceiptPDF({ receipt }: ReceiptPDFProps) {
               <Text style={[styles.tableCell, styles.col1]}>{item.name}</Text>
               <Text style={[styles.tableCell, styles.col2]}>{item.quantity}</Text>
               <Text style={[styles.tableCell, styles.col3]}>{item.price.toFixed(2)}</Text>
-              <Text style={[styles.tableCell, styles.col4]}>{item.vat_amount.toFixed(2)}</Text>
+              <Text style={[styles.tableCell, styles.col4]}>
+                {item.vat_amount > 0 ? item.vat_amount.toFixed(2) : 'Exempt'}
+              </Text>
               <Text style={[styles.tableCell, styles.col5]}>{item.total.toFixed(2)}</Text>
             </View>
           ))}

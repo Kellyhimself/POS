@@ -1,61 +1,36 @@
-"use client";
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@/components/providers/AuthProvider';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import { useSync } from '@/hooks/useSync';
-import {
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  flexRender,
-  createColumnHelper,
-} from '@tanstack/react-table';
+import { format } from 'date-fns';
+import { saveAs } from 'file-saver';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { toast } from 'sonner';
-
-const TABS = [
-  { key: 'sales', label: 'Sales Report' },
-  { key: 'inventory', label: 'Inventory Report' },
-  { key: 'vat', label: 'VAT Report' },
-];
-
-// Types for API responses
-interface Transaction {
-  id: string;
-  product_id: string;
-  quantity: number;
-  total: number;
-  vat_amount: number | null;
-  payment_method: string | null;
-  timestamp: string | null;
-  products: {
-    name: string;
-    sku: string | null;
-    selling_price: number | null;
-    vat_status: boolean | null;
-    category: string | null;
-  } | null;
-}
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
+import { CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ReportData {
-  data: Transaction[];
-}
-
-interface TransformedSale {
-  id: string;
-  sale_id: string;
-  created_at: string;
-  product_id: string;
-  name: string;
-  sku: string | null;
-  quantity: number;
-  price: number;
-  total: number;
-  vat_amount: number | null;
-  payment_method: string | null;
-  category: string | null;
+  data: Array<{
+    id: string;
+    product_id: string;
+    quantity: number;
+    total: number;
+    vat_amount: number;
+    payment_method: string;
+    timestamp: string;
+    products: {
+      name: string;
+      sku: string | null;
+      selling_price: number | null;
+      vat_status: boolean | null;
+      category: string | null;
+    } | null;
+  }>;
 }
 
 interface InventoryReportData {
@@ -72,771 +47,635 @@ interface InventoryReportData {
   }>;
 }
 
-interface VatCategoryBreakdown {
-  category: string;
-  taxable_sales: number;
-  vat_amount: number;
-  exempt_sales: number;
+interface TableColumn {
+  header: string;
+  dataKey: string;
 }
 
-// Add these utility functions at the top of the file after imports
-const exportToCSV = <T extends Record<string, unknown>>(data: T[], filename: string) => {
-  if (!data.length) {
-    toast.error('No data to export');
-    return;
-  }
-  const headers = Object.keys(data[0]).join(',');
-  const rows = data.map(row => 
-    Object.values(row).map(value => 
-      typeof value === 'string' ? `"${value.replace(/"/g, '""')}"` : value
-    ).join(',')
-  );
-  const csv = [headers, ...rows].join('\n');
-  
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
+interface TableRow {
+  [key: string]: string | number;
+}
 
-const exportToPDF = () => {
-  // For now, we'll just show a message that PDF export is coming soon
-  toast.info('PDF export functionality coming soon!');
+const DateRangePicker = ({ startDate, endDate, onStartDateChange, onEndDateChange }: {
+  startDate: Date;
+  endDate: Date;
+  onStartDateChange: (date: Date) => void;
+  onEndDateChange: (date: Date) => void;
+}) => {
+  return (
+    <div className="flex items-center gap-2">
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant={"outline"}
+            className={cn(
+              "w-[240px] justify-start text-left font-normal",
+              !startDate && "text-muted-foreground"
+            )}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {startDate ? format(startDate, "PPP") : <span>Start date</span>}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            mode="single"
+            selected={startDate}
+            onSelect={onStartDateChange}
+            initialFocus
+            required
+          />
+        </PopoverContent>
+      </Popover>
+      <span>to</span>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant={"outline"}
+            className={cn(
+              "w-[240px] justify-start text-left font-normal",
+              !endDate && "text-muted-foreground"
+            )}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {endDate ? format(endDate, "PPP") : <span>End date</span>}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            mode="single"
+            selected={endDate}
+            onSelect={onEndDateChange}
+            initialFocus
+            required
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 };
 
 export default function ReportsPage() {
-  const [activeTab, setActiveTab] = useState('sales');
-  const { storeId, loading } = useAuth();
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [productName, setProductName] = useState<string>('');
-  const [category, setCategory] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'vat'>('sales');
+  const [startDate, setStartDate] = useState<Date>(new Date(new Date().setDate(new Date().getDate() - 30)));
+  const [endDate, setEndDate] = useState<Date>(new Date());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [salesData, setSalesData] = useState<ReportData | null>(null);
+  const [inventoryData, setInventoryData] = useState<InventoryReportData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
+  const { user, session, storeId, storeName } = useAuth();
   const { generateReports, generateInventoryReport } = useSync(storeId || '');
+  const { isOnline } = useAuth();
 
-  // Reset filters when tab changes
-  function handleTabChange(tabKey: string) {
-    setActiveTab(tabKey);
-    setStartDate('');
-    setEndDate('');
-    setProductName('');
-    setCategory('');
-  }
+  useEffect(() => {
+    if (!user || !session) {
+      toast.error('Please log in to access reports');
+      return;
+    }
+  }, [user, session]);
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (!storeId) return <div className="p-8 text-red-500">No store selected or user not authenticated.</div>;
+  useEffect(() => {
+    let isMounted = true;
 
-  return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold mb-6">Reports</h1>
-      <div className="flex flex-wrap items-end gap-4 mb-4">
-        {(activeTab === 'sales' || activeTab === 'vat' || activeTab === 'inventory') && (
-          <>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Product Name</label>
-              <input
-                type="text"
-                className="border rounded px-2 py-1 text-sm"
-                placeholder="Search product name..."
-                value={productName}
-                onChange={e => setProductName(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Category</label>
-              <input
-                type="text"
-                className="border rounded px-2 py-1 text-sm"
-                placeholder="Search category..."
-                value={category}
-                onChange={e => setCategory(e.target.value)}
-              />
-            </div>
-          </>
-        )}
-        {(activeTab === 'sales' || activeTab === 'vat') && (
-          <>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Start Date</label>
-              <input
-                type="date"
-                className="border rounded px-2 py-1 text-sm"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                max={endDate || undefined}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">End Date</label>
-              <input
-                type="date"
-                className="border rounded px-2 py-1 text-sm"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                min={startDate || undefined}
-              />
-            </div>
-          </>
-        )}
-      </div>
-      <div className="flex space-x-4 mb-6">
-        {TABS.map(tab => (
-          <button
-            key={tab.key}
-            className={`px-4 py-2 rounded-t-lg font-semibold border-b-2 transition-colors ${
-              activeTab === tab.key
-                ? 'border-[#0ABAB5] text-[#0ABAB5] bg-white'
-                : 'border-transparent text-gray-500 bg-gray-100 hover:text-[#0ABAB5]'
-            }`}
-            onClick={() => handleTabChange(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <div className="bg-white rounded-lg shadow p-6 min-h-[400px]">
-        {activeTab === 'sales' && (
-          <SalesReport
-            storeId={storeId}
-            startDate={startDate}
-            endDate={endDate}
-            productName={productName}
-            category={category}
-            generateReports={generateReports}
-          />
-        )}
-        {activeTab === 'inventory' && (
-          <InventoryReport
-            storeId={storeId}
-            productName={productName}
-            category={category}
-            generateInventoryReport={generateInventoryReport}
-          />
-        )}
-        {activeTab === 'vat' && (
-          <VatReport
-            storeId={storeId}
-            startDate={startDate}
-            endDate={endDate}
-            productName={productName}
-            category={category}
-            generateReports={generateReports}
-          />
-        )}
-      </div>
-    </div>
+    const fetchData = async () => {
+      if (!user || !session || !storeId) {
+        toast.error('Authentication required. Please log in again.');
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        if (activeTab === 'sales' || activeTab === 'vat') {
+          // Set start date to beginning of the day (00:00:00)
+          const startOfDay = new Date(startDate);
+          startOfDay.setHours(0, 0, 0, 0);
+
+          // Set end date to end of the day (23:59:59)
+          const endOfDay = new Date(endDate);
+          endOfDay.setHours(23, 59, 59, 999);
+
+          const data = await generateReports(startOfDay, endOfDay);
+          if (isMounted) {
+            setSalesData(data);
+          }
+        } else {
+          const data = await generateInventoryReport();
+          if (isMounted) {
+            setInventoryData(data);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching reports:', error);
+        if (isMounted) {
+          toast.error('Failed to fetch report data. Please try again.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, startDate, endDate, storeId, user, session]);
+
+  const exportToCSV = async () => {
+    if (!user || !session || !storeId) {
+      toast.error('Authentication required to export reports');
+      return;
+    }
+
+    if (!salesData && !inventoryData) {
+      toast.error('No data available to export');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      let csvContent = '';
+      let headers = '';
+      let rows = '';
+
+      if (activeTab === 'sales') {
+        headers = 'Product,Quantity,Price,VAT,Total,Payment Method,Date\n';
+        rows = salesData?.data.map(item => {
+          const product = item.products?.name || 'Unknown';
+          return `${product},${item.quantity},${item.total},${item.vat_amount},${item.total + item.vat_amount},${item.payment_method},${format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}`;
+        }).join('\n') || '';
+      } else if (activeTab === 'inventory') {
+        headers = 'Product,SKU,Category,Quantity,Retail Price,Wholesale Price,Low Stock\n';
+        rows = inventoryData?.data.map(item => {
+          return `${item.name},${item.sku || ''},${item.category || ''},${item.quantity},${item.retail_price?.toFixed(2) || ''},${item.wholesale_price?.toFixed(2) || ''},${item.low_stock ? 'Yes' : 'No'}`;
+        }).join('\n') || '';
+      } else if (activeTab === 'vat') {
+        headers = 'Product,Category,Taxable Sales,VAT Amount,Date\n';
+        rows = salesData?.data.map(item => {
+          const product = item.products?.name || 'Unknown';
+          const category = item.products?.category || 'Uncategorized';
+          return `${product},${category},${item.total},${item.vat_amount},${format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}`;
+        }).join('\n') || '';
+      }
+
+      csvContent = headers + rows;
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+      saveAs(blob, `${activeTab}_report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+      toast.success('CSV exported successfully');
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast.error('Failed to export CSV. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const calculateTotals = () => {
+    if (!salesData?.data) return null;
+
+    const totals = salesData.data.reduce((acc, item) => ({
+      totalSales: acc.totalSales + (item.total || 0),
+      totalVAT: acc.totalVAT + (item.vat_amount || 0),
+      totalQuantity: acc.totalQuantity + (item.quantity || 0),
+      averageSale: (acc.totalSales + (item.total || 0)) / (acc.totalQuantity + (item.quantity || 0))
+    }), {
+      totalSales: 0,
+      totalVAT: 0,
+      totalQuantity: 0,
+      averageSale: 0
+    });
+
+    return totals;
+  };
+
+  const calculateInventoryTotals = () => {
+    if (!inventoryData?.data) return null;
+
+    return inventoryData.data.reduce((acc, item) => ({
+      totalProducts: acc.totalProducts + 1,
+      totalQuantity: acc.totalQuantity + (item.quantity || 0),
+      totalRetailValue: acc.totalRetailValue + ((item.retail_price || 0) * (item.quantity || 0)),
+      totalWholesaleValue: acc.totalWholesaleValue + ((item.wholesale_price || 0) * (item.quantity || 0))
+    }), {
+      totalProducts: 0,
+      totalQuantity: 0,
+      totalRetailValue: 0,
+      totalWholesaleValue: 0
+    });
+  };
+
+  const filteredSalesData = salesData?.data.filter(item => {
+    const itemDate = new Date(item.timestamp);
+    const isInDateRange = itemDate >= startDate && itemDate <= endDate;
+    const matchesSearch = item.products?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.products?.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+    return isInDateRange && matchesSearch;
+  });
+
+  const filteredInventoryData = inventoryData?.data.filter(item =>
+    item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.category?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-}
 
-function TotalsSection({ title, totals }: { title: string; totals: Array<{ label: string; value: number }> }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const renderSummaryCards = () => {
+    if (isLoading) return null;
+
+    if (activeTab === 'sales' && salesData) {
+      const totals = calculateTotals();
+      if (!totals) return null;
+
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total Sales</h3>
+            <p className="text-2xl font-bold">KES {totals.totalSales.toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total VAT</h3>
+            <p className="text-2xl font-bold">KES {totals.totalVAT.toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total Quantity</h3>
+            <p className="text-2xl font-bold">{totals.totalQuantity}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Average Sale</h3>
+            <p className="text-2xl font-bold">KES {totals.averageSale.toFixed(2)}</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === 'inventory' && inventoryData) {
+      const totals = calculateInventoryTotals();
+      if (!totals) return null;
+
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total Products</h3>
+            <p className="text-2xl font-bold">{totals.totalProducts}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total Quantity</h3>
+            <p className="text-2xl font-bold">{totals.totalQuantity}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Retail Value</h3>
+            <p className="text-2xl font-bold">KES {totals.totalRetailValue.toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Wholesale Value</h3>
+            <p className="text-2xl font-bold">KES {totals.totalWholesaleValue.toFixed(2)}</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === 'vat' && salesData) {
+      const totals = calculateTotals();
+      if (!totals) return null;
+
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total VAT</h3>
+            <p className="text-2xl font-bold">KES {totals.totalVAT.toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Taxable Sales</h3>
+            <p className="text-2xl font-bold">KES {totals.totalSales.toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">VAT Rate</h3>
+            <p className="text-2xl font-bold">16%</p>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const handlePdfExport = async () => {
+    if (!user || !session || !storeId) {
+      toast.error('Authentication required to export PDF');
+      return;
+    }
+
+    setIsPdfLoading(true);
+    try {
+      let reportData;
+      let reportTotals;
+
+      if (activeTab === 'sales' || activeTab === 'vat') {
+        reportData = salesData;
+        reportTotals = calculateTotals();
+      } else {
+        reportData = inventoryData;
+        reportTotals = calculateInventoryTotals();
+      }
+
+      if (!reportData) {
+        throw new Error('No data available to export');
+      }
+
+      // Create PDF document
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Add header
+      doc.setFontSize(20);
+      doc.text(`${storeName || 'Your Store'} - ${activeTab.toUpperCase()} Report`, pageWidth / 2, 20, { align: 'center' });
+      
+      doc.setFontSize(12);
+      doc.text(`Date Range: ${format(startDate, 'dd/MM/yyyy')} to ${format(endDate, 'dd/MM/yyyy')}`, pageWidth / 2, 30, { align: 'center' });
+      
+      if (!isOnline) {
+        doc.setFontSize(10);
+        doc.setTextColor(255, 0, 0);
+        doc.text('OFFLINE DATA', pageWidth / 2, 40, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+      }
+
+      // Add summary section
+      doc.setFontSize(12);
+      doc.text('Summary:', 14, 50);
+      
+      if (activeTab === 'sales' || activeTab === 'vat') {
+        const salesTotals = reportTotals as { totalSales: number; totalVAT: number; totalQuantity: number; averageSale: number };
+        doc.setFontSize(10);
+        doc.text(`Total Sales: KES ${salesTotals.totalSales.toFixed(2)}`, 20, 60);
+        doc.text(`Total VAT: KES ${salesTotals.totalVAT.toFixed(2)}`, 20, 70);
+        doc.text(`Total Quantity: ${salesTotals.totalQuantity}`, 20, 80);
+      } else {
+        const inventoryTotals = reportTotals as { totalProducts: number; totalQuantity: number; totalRetailValue: number; totalWholesaleValue: number };
+        doc.setFontSize(10);
+        doc.text(`Total Products: ${inventoryTotals.totalProducts}`, 20, 60);
+        doc.text(`Total Quantity: ${inventoryTotals.totalQuantity}`, 20, 70);
+        doc.text(`Retail Value: KES ${inventoryTotals.totalRetailValue.toFixed(2)}`, 20, 80);
+        doc.text(`Wholesale Value: KES ${inventoryTotals.totalWholesaleValue.toFixed(2)}`, 20, 90);
+      }
+
+      // Prepare table data
+      let tableData: TableRow[] = [];
+      let columns: TableColumn[] = [];
+
+      if (activeTab === 'sales') {
+        columns = [
+          { header: 'Product', dataKey: 'product' },
+          { header: 'Quantity', dataKey: 'quantity' },
+          { header: 'Price', dataKey: 'price' },
+          { header: 'VAT', dataKey: 'vat' },
+          { header: 'Total', dataKey: 'total' },
+          { header: 'Payment Method', dataKey: 'payment' },
+          { header: 'Date', dataKey: 'date' }
+        ];
+        tableData = (reportData as ReportData).data.map(item => ({
+          product: item.products?.name || 'Unknown',
+          quantity: item.quantity,
+          price: item.total.toFixed(2),
+          vat: item.vat_amount.toFixed(2),
+          total: (item.total + item.vat_amount).toFixed(2),
+          payment: item.payment_method,
+          date: format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
+        }));
+      } else if (activeTab === 'inventory') {
+        columns = [
+          { header: 'Product', dataKey: 'product' },
+          { header: 'SKU', dataKey: 'sku' },
+          { header: 'Category', dataKey: 'category' },
+          { header: 'Quantity', dataKey: 'quantity' },
+          { header: 'Retail Price', dataKey: 'retail' },
+          { header: 'Wholesale Price', dataKey: 'wholesale' },
+          { header: 'Low Stock', dataKey: 'lowStock' }
+        ];
+        tableData = (reportData as InventoryReportData).data.map(item => ({
+          product: item.name,
+          sku: item.sku || '-',
+          category: item.category || '-',
+          quantity: item.quantity,
+          retail: item.retail_price?.toFixed(2) || '-',
+          wholesale: item.wholesale_price?.toFixed(2) || '-',
+          lowStock: item.low_stock ? 'Yes' : 'No'
+        }));
+      } else if (activeTab === 'vat') {
+        columns = [
+          { header: 'Product', dataKey: 'product' },
+          { header: 'Category', dataKey: 'category' },
+          { header: 'Taxable Sales', dataKey: 'taxable' },
+          { header: 'VAT Amount', dataKey: 'vat' },
+          { header: 'Date', dataKey: 'date' }
+        ];
+        tableData = (reportData as ReportData).data.map(item => ({
+          product: item.products?.name || 'Unknown',
+          category: item.products?.category || 'Uncategorized',
+          taxable: item.total.toFixed(2),
+          vat: item.vat_amount.toFixed(2),
+          date: format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
+        }));
+      }
+
+      // Add table using autoTable
+      autoTable(doc, {
+        head: [columns.map(col => col.header)],
+        body: tableData.map(row => columns.map(col => row[col.dataKey])),
+        startY: activeTab === 'inventory' ? 100 : 90,
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [66, 139, 202] }
+      });
+
+      // Add footer
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.text(
+          `Generated on ${format(new Date(), 'dd/MM/yyyy HH:mm')}${!isOnline ? ' (Offline Mode)' : ''}`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+
+      // Save the PDF
+      doc.save(`${activeTab}_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      toast.success('PDF exported successfully');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Failed to export PDF. Please try again.');
+    } finally {
+      setIsPdfLoading(false);
+    }
+  };
 
   return (
-    <div className="mb-4 border rounded-lg">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-4 py-2 flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-t-lg"
-      >
-        <span className="font-semibold">{title}</span>
-        {isOpen ? (
-          <ChevronUp className="w-5 h-5" />
-        ) : (
-          <ChevronDown className="w-5 h-5" />
-        )}
-      </button>
-      {isOpen && (
-        <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-          {totals.map((total, index) => (
-            <div key={index} className="bg-white p-3 rounded-lg shadow-sm">
-              <div className="text-sm text-gray-500">{total.label}</div>
-              <div className="text-lg font-semibold">KES {total.value.toLocaleString()}</div>
+    <div className="p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold mb-4">Reports</h1>
+        <div className="flex space-x-4 mb-4">
+          <button
+            className={`px-4 py-2 rounded ${activeTab === 'sales' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+            onClick={() => setActiveTab('sales')}
+          >
+            Sales Report
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${activeTab === 'inventory' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+            onClick={() => setActiveTab('inventory')}
+          >
+            Inventory Report
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${activeTab === 'vat' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+            onClick={() => setActiveTab('vat')}
+          >
+            VAT Report
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-4 mb-4">
+          <div className="flex flex-wrap gap-4 flex-grow">
+            {(activeTab === 'sales' || activeTab === 'vat') && (
+              <DateRangePicker
+                startDate={startDate}
+                endDate={endDate}
+                onStartDateChange={setStartDate}
+                onEndDateChange={setEndDate}
+              />
+            )}
+            <div className="relative flex-grow">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by product name, SKU, or category..."
+                className="border-2 border-blue-400 focus:border-blue-600 rounded px-2 py-1 w-full transition-colors duration-200"
+              />
             </div>
-          ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={exportToCSV}
+              disabled={isExporting || isLoading}
+              className={`px-4 py-2 bg-green-500 text-white rounded ${(isExporting || isLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isExporting ? 'Exporting...' : 'Export to CSV'}
+            </button>
+            {((activeTab === 'sales' && salesData) || 
+              (activeTab === 'inventory' && inventoryData) || 
+              (activeTab === 'vat' && salesData)) && !isLoading && (
+              <button
+                onClick={handlePdfExport}
+                disabled={isPdfLoading}
+                className={`px-4 py-2 bg-red-500 text-white rounded ${isPdfLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isPdfLoading ? 'Generating PDF...' : 'Export to PDF'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {renderSummaryCards()}
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading report data...</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto bg-white rounded-lg shadow">
+          {activeTab === 'sales' && salesData && (
+            <table className="min-w-full bg-white">
+              <thead>
+                <tr>
+                  <th className="px-4 py-2">Product</th>
+                  <th className="px-4 py-2">Quantity</th>
+                  <th className="px-4 py-2">Price</th>
+                  <th className="px-4 py-2">VAT</th>
+                  <th className="px-4 py-2">Total</th>
+                  <th className="px-4 py-2">Payment Method</th>
+                  <th className="px-4 py-2">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSalesData?.map((item) => (
+                  <tr key={item.id}>
+                    <td className="border px-4 py-2">{item.products?.name || 'Unknown'}</td>
+                    <td className="border px-4 py-2">{item.quantity}</td>
+                    <td className="border px-4 py-2">{item.total.toFixed(2)}</td>
+                    <td className="border px-4 py-2">{item.vat_amount.toFixed(2)}</td>
+                    <td className="border px-4 py-2">{(item.total + item.vat_amount).toFixed(2)}</td>
+                    <td className="border px-4 py-2">{item.payment_method}</td>
+                    <td className="border px-4 py-2">{format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {activeTab === 'inventory' && inventoryData && (
+            <table className="min-w-full bg-white">
+              <thead>
+                <tr>
+                  <th className="px-4 py-2">Product</th>
+                  <th className="px-4 py-2">SKU</th>
+                  <th className="px-4 py-2">Category</th>
+                  <th className="px-4 py-2">Quantity</th>
+                  <th className="px-4 py-2">Retail Price</th>
+                  <th className="px-4 py-2">Wholesale Price</th>
+                  <th className="px-4 py-2">Low Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInventoryData?.map((item) => (
+                  <tr key={item.id}>
+                    <td className="border px-4 py-2">{item.name}</td>
+                    <td className="border px-4 py-2">{item.sku || '-'}</td>
+                    <td className="border px-4 py-2">{item.category || '-'}</td>
+                    <td className="border px-4 py-2">{item.quantity}</td>
+                    <td className="border px-4 py-2">{item.retail_price?.toFixed(2) || '-'}</td>
+                    <td className="border px-4 py-2">{item.wholesale_price?.toFixed(2) || '-'}</td>
+                    <td className="border px-4 py-2">{item.low_stock ? 'Yes' : 'No'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {activeTab === 'vat' && salesData && (
+            <table className="min-w-full bg-white">
+              <thead>
+                <tr>
+                  <th className="px-4 py-2">Product</th>
+                  <th className="px-4 py-2">Category</th>
+                  <th className="px-4 py-2">Taxable Sales</th>
+                  <th className="px-4 py-2">VAT Amount</th>
+                  <th className="px-4 py-2">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSalesData?.map((item) => (
+                  <tr key={item.id}>
+                    <td className="border px-4 py-2">{item.products?.name || 'Unknown'}</td>
+                    <td className="border px-4 py-2">{item.products?.category || 'Uncategorized'}</td>
+                    <td className="border px-4 py-2">{item.total.toFixed(2)}</td>
+                    <td className="border px-4 py-2">{item.vat_amount.toFixed(2)}</td>
+                    <td className="border px-4 py-2">{format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>
   );
-}
-
-function SalesReport({ 
-  storeId, 
-  startDate, 
-  endDate, 
-  productName, 
-  category,
-  generateReports 
-}: { 
-  storeId: string; 
-  startDate: string; 
-  endDate: string; 
-  productName: string; 
-  category: string;
-  generateReports: (startDate: Date, endDate: Date) => Promise<ReportData>;
-}) {
-  console.log('SalesReport - Props:', { storeId, startDate, endDate, productName, category });
-  
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['sales-report', storeId, startDate, endDate, productName, category],
-    queryFn: async () => {
-      console.log('SalesReport - Starting data fetch');
-      const start = startDate ? new Date(startDate) : new Date(0);
-      const end = endDate ? new Date(endDate) : new Date();
-      console.log('SalesReport - Date range:', { start, end });
-      
-      const report = await generateReports(start, end);
-      console.log('SalesReport - Raw report data:', report);
-      
-      // Filter by product name and category
-      let filteredSales = report.data;
-      if (productName) {
-        filteredSales = filteredSales.filter((sale: Transaction) => 
-          sale.products?.name?.toLowerCase().includes(productName.toLowerCase())
-        );
-      }
-      if (category) {
-        filteredSales = filteredSales.filter((sale: Transaction) => 
-          sale.products?.category?.toLowerCase().includes(category.toLowerCase())
-        );
-      }
-      console.log('SalesReport - Filtered sales:', filteredSales);
-
-      // Transform the data to include all items in the sale
-      const transformedSales: TransformedSale[] = filteredSales.map((sale: Transaction) => ({
-        id: `${sale.id}`,
-        sale_id: sale.id,
-        created_at: sale.timestamp || new Date().toISOString(),
-        product_id: sale.product_id,
-        name: sale.products?.name || 'Unknown Product',
-        sku: sale.products?.sku || null,
-        quantity: sale.quantity,
-        price: sale.quantity > 0 ? sale.total / sale.quantity : 0,
-        total: sale.total,
-        vat_amount: sale.vat_amount || 0,
-        payment_method: sale.payment_method || 'Unknown',
-        category: sale.products?.category || null
-      }));
-      console.log('SalesReport - Transformed sales:', transformedSales);
-
-      return { data: transformedSales };
-    },
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-    refetchInterval: 30 * 1000,
-    refetchOnWindowFocus: true,
-  });
-
-  console.log('SalesReport - Query state:', { isLoading, error, data });
-
-  const rows = data?.data || [];
-  console.log('SalesReport - Final rows to display:', rows);
-  
-  // Calculate totals
-  const totals = {
-    totalSales: rows.reduce((sum: number, row: TransformedSale) => sum + row.total, 0),
-    totalVAT: rows.reduce((sum: number, row: TransformedSale) => sum + (row.vat_amount || 0), 0),
-    totalQuantity: rows.reduce((sum: number, row: TransformedSale) => sum + row.quantity, 0),
-    averageSale: rows.length > 0 ? rows.reduce((sum: number, row: TransformedSale) => sum + row.total, 0) / rows.length : 0,
-  };
-
-  // Define columns for TanStack Table
-  const columnHelper = createColumnHelper<TransformedSale>();
-  const columns = [
-    columnHelper.accessor('created_at', {
-      header: 'Date',
-      cell: info => new Date(info.getValue()).toLocaleString(),
-    }),
-    columnHelper.accessor('name', {
-      header: 'Product',
-      cell: info => info.getValue(),
-    }),
-    columnHelper.accessor('sku', {
-      header: 'SKU',
-      cell: info => info.getValue() || '',
-    }),
-    columnHelper.accessor('quantity', {
-      header: 'Qty',
-      cell: info => info.getValue(),
-    }),
-    columnHelper.accessor('price', {
-      header: 'Price',
-      cell: info => `KES ${info.getValue().toLocaleString()}`,
-    }),
-    columnHelper.accessor('total', {
-      header: 'Total',
-      cell: info => `KES ${info.getValue().toLocaleString()}`,
-    }),
-    columnHelper.accessor('vat_amount', {
-      header: 'VAT',
-      cell: info => `KES ${info.getValue().toLocaleString()}`,
-    }),
-    columnHelper.accessor('payment_method', {
-      header: 'Payment',
-      cell: info => info.getValue(),
-    }),
-  ];
-
-  // Initialize TanStack Table
-  const table = useReactTable({
-    data: rows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    initialState: {
-      pagination: {
-        pageSize: 10,
-      },
-    },
-  });
-
-  const handleExportCSV = () => {
-    if (!rows.length) {
-      toast.error('No data to export');
-      return;
-    }
-    const filename = `sales_report_${startDate || 'all'}_to_${endDate || 'all'}.csv`;
-    exportToCSV(rows as Record<string, unknown>[], filename);
-  };
-
-  const handleExportPDF = () => {
-    if (!rows.length) {
-      toast.error('No data to export');
-      return;
-    }
-    exportToPDF();
-  };
-
-  if (isLoading) return <div>Loading sales report...</div>;
-  if (error) return <div className="text-red-500">Error: {(error as Error).message}</div>;
-
-  return (
-    <div>
-      <TotalsSection
-        title="Sales Summary"
-        totals={[
-          { label: 'Total Sales', value: totals.totalSales },
-          { label: 'Total VAT', value: totals.totalVAT },
-          { label: 'Total Quantity', value: totals.totalQuantity },
-          { label: 'Average Sale', value: totals.averageSale },
-        ]}
-      />
-      <div className="flex justify-end mb-2">
-        <button 
-          onClick={handleExportCSV}
-          className="btn btn-outline mr-2"
-          disabled={!rows.length}
-        >
-          Export CSV
-        </button>
-        <button 
-          onClick={handleExportPDF}
-          className="btn btn-outline"
-          disabled={!rows.length}
-        >
-          Export PDF
-        </button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            {table.getHeaderGroups().map(headerGroup => (
-              <tr key={headerGroup.id} className="bg-gray-100">
-                {headerGroup.headers.map(header => (
-                  <th
-                    key={header.id}
-                    className="px-3 py-2 text-left cursor-pointer hover:bg-gray-200"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext()
-                    )}
-                    {{
-                      asc: ' 🔼',
-                      desc: ' 🔽',
-                    }[header.column.getIsSorted() as string] ?? null}
-                  </th>
-                ))}
-            </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map(row => (
-              <tr key={row.id} className="border-b">
-                {row.getVisibleCells().map(cell => (
-                  <td key={cell.id} className="px-3 py-2">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center justify-between mt-4">
-        <div className="flex items-center gap-2">
-          <button
-            className="btn btn-outline"
-            onClick={() => table.setPageIndex(0)}
-            disabled={!table.getCanPreviousPage()}
-          >
-            {'<<'}
-          </button>
-          <button
-            className="btn btn-outline"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            {'<'}
-          </button>
-          <button
-            className="btn btn-outline"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            {'>'}
-          </button>
-          <button
-            className="btn btn-outline"
-            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-            disabled={!table.getCanNextPage()}
-          >
-            {'>>'}
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm">
-            Page {table.getState().pagination.pageIndex + 1} of{' '}
-            {table.getPageCount()}
-          </span>
-          <select
-            value={table.getState().pagination.pageSize}
-            onChange={e => {
-              table.setPageSize(Number(e.target.value));
-            }}
-            className="border rounded px-2 py-1"
-          >
-            {[10, 20, 30, 40, 50].map(pageSize => (
-              <option key={pageSize} value={pageSize}>
-                Show {pageSize}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function InventoryReport({ 
-  storeId, 
-  productName, 
-  category,
-  generateInventoryReport 
-}: { 
-  storeId: string; 
-  productName: string; 
-  category: string;
-  generateInventoryReport: () => Promise<InventoryReportData>;
-}) {
-  console.log('InventoryReport - Props:', { storeId, productName, category });
-  
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['inventory-report', storeId, productName, category],
-    queryFn: async () => {
-      console.log('InventoryReport - Starting data fetch');
-      
-      const report = await generateInventoryReport();
-      console.log('InventoryReport - Raw report data:', report);
-      
-      // Filter by product name and category
-      let filteredProducts = report.data;
-      if (productName) {
-        filteredProducts = filteredProducts.filter((product: InventoryReportData['data'][0]) => 
-          product.name.toLowerCase().includes(productName.toLowerCase())
-        );
-      }
-      if (category) {
-        filteredProducts = filteredProducts.filter((product: InventoryReportData['data'][0]) => 
-          product.category?.toLowerCase().includes(category.toLowerCase())
-        );
-      }
-      console.log('InventoryReport - Filtered products:', filteredProducts);
-
-      return { data: filteredProducts };
-    },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-
-  console.log('InventoryReport - Query state:', { isLoading, error, data });
-
-  if (isLoading) return <div>Loading inventory report...</div>;
-  if (error) return <div className="text-red-500">Error: {(error as Error).message}</div>;
-
-  const rows = data?.data || [];
-  console.log('InventoryReport - Final rows to display:', rows);
-
-  // Calculate totals
-  const totals = {
-    totalProducts: rows.length,
-    totalQuantity: rows.reduce((sum: number, row: InventoryReportData['data'][0]) => sum + row.quantity, 0),
-    totalRetailValue: rows.reduce((sum: number, row: InventoryReportData['data'][0]) => sum + ((row.retail_price || 0) * row.quantity), 0),
-    totalWholesaleValue: rows.reduce((sum: number, row: InventoryReportData['data'][0]) => sum + ((row.wholesale_price || 0) * row.quantity), 0),
-    lowStockItems: rows.filter((row: InventoryReportData['data'][0]) => row.low_stock).length,
-  };
-
-  const handleExportCSV = () => {
-    if (!rows.length) {
-      toast.error('No data to export');
-      return;
-    }
-    const filename = `inventory_report_${new Date().toISOString()}.csv`;
-    exportToCSV(rows as Record<string, unknown>[], filename);
-  };
-
-  const handleExportPDF = () => {
-    if (!rows.length) {
-      toast.error('No data to export');
-      return;
-    }
-    exportToPDF();
-  };
-
-  return (
-    <div>
-      <TotalsSection
-        title="Inventory Summary"
-        totals={[
-          { label: 'Total Products', value: totals.totalProducts },
-          { label: 'Total Quantity', value: totals.totalQuantity },
-          { label: 'Total Retail Value', value: totals.totalRetailValue },
-          { label: 'Total Wholesale Value', value: totals.totalWholesaleValue },
-        ]}
-      />
-      <div className="flex justify-end mb-2">
-        <button 
-          onClick={handleExportCSV}
-          className="btn btn-outline mr-2"
-          disabled={!rows.length}
-        >
-          Export CSV
-        </button>
-        <button 
-          onClick={handleExportPDF}
-          className="btn btn-outline"
-          disabled={!rows.length}
-        >
-          Export PDF
-        </button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="px-3 py-2 text-left">Product</th>
-              <th className="px-3 py-2 text-left">SKU</th>
-              <th className="px-3 py-2 text-left">Category</th>
-              <th className="px-3 py-2 text-left">Quantity</th>
-              <th className="px-3 py-2 text-left">Low Stock</th>
-              <th className="px-3 py-2 text-left">Retail Price</th>
-              <th className="px-3 py-2 text-left">Wholesale Price</th>
-              <th className="px-3 py-2 text-left">Wholesale Threshold</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((product) => (
-              <tr key={product.id} className="border-b">
-                <td className="px-3 py-2">{product.name}</td>
-                <td className="px-3 py-2">{product.sku}</td>
-                <td className="px-3 py-2">{product.category}</td>
-                <td className="px-3 py-2">{product.quantity}</td>
-                <td className="px-3 py-2">{product.low_stock ? 'Yes' : 'No'}</td>
-                <td className="px-3 py-2">KES {product.retail_price?.toLocaleString() || 'N/A'}</td>
-                <td className="px-3 py-2">KES {product.wholesale_price?.toLocaleString() || 'N/A'}</td>
-                <td className="px-3 py-2">{product.wholesale_threshold || 'N/A'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function VatReport({ 
-  storeId, 
-  startDate, 
-  endDate, 
-  productName, 
-  category,
-  generateReports 
-}: { 
-  storeId: string; 
-  startDate: string; 
-  endDate: string; 
-  productName: string; 
-  category: string;
-  generateReports: (startDate: Date, endDate: Date) => Promise<ReportData>;
-}) {
-  console.log('VatReport - Props:', { storeId, startDate, endDate, productName, category });
-  
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['vat-report', storeId, startDate, endDate, productName, category],
-    queryFn: async () => {
-      console.log('VatReport - Starting data fetch');
-      const start = startDate ? new Date(startDate) : new Date(0);
-      const end = endDate ? new Date(endDate) : new Date();
-      console.log('VatReport - Date range:', { start, end });
-      
-      const report = await generateReports(start, end);
-      console.log('VatReport - Raw report data:', report);
-      
-      // Filter by product name and category
-      let filteredSales = report.data;
-      if (productName) {
-        filteredSales = filteredSales.filter((sale: Transaction) => 
-          sale.products?.name?.toLowerCase().includes(productName.toLowerCase())
-        );
-      }
-      if (category) {
-        filteredSales = filteredSales.filter((sale: Transaction) => 
-          sale.products?.category?.toLowerCase().includes(category.toLowerCase())
-        );
-      }
-      console.log('VatReport - Filtered sales:', filteredSales);
-
-      // Calculate VAT summary
-      const vatSummary = calculateVAT(filteredSales);
-      console.log('VatReport - Calculated VAT summary:', vatSummary);
-
-      return { data: vatSummary };
-    },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-
-  console.log('VatReport - Query state:', { isLoading, error, data });
-
-  if (isLoading) return <div>Loading VAT report...</div>;
-  if (error) return <div className="text-red-500">Error: {(error as Error).message}</div>;
-
-  const vatData = data?.data;
-  console.log('VatReport - Final VAT data to display:', vatData);
-
-  const handleExportCSV = () => {
-    if (!vatData?.category_breakdown?.length) {
-      toast.error('No data to export');
-      return;
-    }
-    const filename = `vat_report_${startDate || 'all'}_to_${endDate || 'all'}.csv`;
-    exportToCSV(vatData.category_breakdown as Record<string, unknown>[], filename);
-  };
-
-  const handleExportPDF = () => {
-    if (!vatData?.category_breakdown?.length) {
-      toast.error('No data to export');
-      return;
-    }
-    exportToPDF();
-  };
-
-  return (
-    <div>
-      <TotalsSection
-        title="VAT Summary"
-        totals={[
-          { label: 'Total VAT', value: vatData?.vat_total || 0 },
-          { label: 'Taxable Sales', value: vatData?.taxable_total || 0 },
-          { label: 'Exempt Sales', value: vatData?.exempt_total || 0 },
-          { label: 'Total Sales', value: (vatData?.taxable_total || 0) + (vatData?.exempt_total || 0) },
-        ]}
-      />
-      <div className="flex justify-end mb-2">
-        <button 
-          onClick={handleExportCSV}
-          className="btn btn-outline mr-2"
-          disabled={!vatData?.category_breakdown?.length}
-        >
-          Export CSV
-        </button>
-        <button 
-          onClick={handleExportPDF}
-          className="btn btn-outline"
-          disabled={!vatData?.category_breakdown?.length}
-        >
-          Export PDF
-        </button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="px-3 py-2 text-left">Category</th>
-              <th className="px-3 py-2 text-left">Taxable Sales</th>
-              <th className="px-3 py-2 text-left">Exempt Sales</th>
-              <th className="px-3 py-2 text-left">VAT Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {vatData?.category_breakdown.map((item: VatCategoryBreakdown, index: number) => (
-              <tr key={index} className="border-b">
-                <td className="px-3 py-2">{item.category}</td>
-                <td className="px-3 py-2">KES {item.taxable_sales.toLocaleString()}</td>
-                <td className="px-3 py-2">KES {item.exempt_sales.toLocaleString()}</td>
-                <td className="px-3 py-2">KES {item.vat_amount.toLocaleString()}</td>
-              </tr>
-            ))}
-            <tr className="border-b font-semibold bg-gray-50">
-              <td className="px-3 py-2">Total</td>
-              <td className="px-3 py-2">KES {vatData?.taxable_total.toLocaleString() || '0'}</td>
-              <td className="px-3 py-2">KES {vatData?.exempt_total.toLocaleString() || '0'}</td>
-              <td className="px-3 py-2">KES {vatData?.vat_total.toLocaleString() || '0'}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-const calculateVAT = (sales: Transaction[]) => {
-  const categoryBreakdown = sales.reduce((acc: Record<string, VatCategoryBreakdown>, sale) => {
-    const category = sale.products?.category || 'Uncategorized';
-    const vatAmount = sale.vat_amount ?? 0;
-    const total = sale.total ?? 0;
-
-    if (!acc[category]) {
-      acc[category] = {
-        category,
-        taxable_sales: 0,
-        vat_amount: 0,
-        exempt_sales: 0
-      };
-    }
-
-    if (sale.products?.vat_status) {
-      acc[category].taxable_sales += total;
-      acc[category].vat_amount += vatAmount;
-    } else {
-      acc[category].exempt_sales += total;
-    }
-
-    return acc;
-  }, {});
-
-  return {
-    category_breakdown: Object.values(categoryBreakdown),
-    vat_total: sales.reduce((sum, sale) => sum + (sale.vat_amount ?? 0), 0),
-    taxable_total: sales.reduce((sum, sale) => 
-      sum + (sale.products?.vat_status ? (sale.total ?? 0) : 0), 0),
-    exempt_total: sales.reduce((sum, sale) => 
-      sum + (!sale.products?.vat_status ? (sale.total ?? 0) : 0), 0)
-  };
-}; 
+} 

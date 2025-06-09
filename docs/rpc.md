@@ -6,7 +6,12 @@ DROP FUNCTION IF EXISTS update_stock_batch(stock_update_input[]);
 DROP TYPE IF EXISTS product_input;
 DROP TYPE IF EXISTS stock_update_input;
 
--- Create type for product input
+-- Drop existing functions and types if they exist
+DROP FUNCTION IF EXISTS create_product(product_input);
+DROP FUNCTION IF EXISTS create_products_batch(product_input[]);
+DROP TYPE IF EXISTS product_input;
+
+-- Create type for product input with input_vat_amount
 CREATE TYPE product_input AS (
     id UUID,
     name TEXT,
@@ -22,13 +27,8 @@ CREATE TYPE product_input AS (
     unit_of_measure TEXT,
     units_per_pack INTEGER,
     parent_product_id UUID,
-    selling_price DECIMAL
-);
-
--- Create type for stock update input
-CREATE TYPE stock_update_input AS (
-    product_id UUID,
-    quantity_change INTEGER
+    selling_price DECIMAL,
+    input_vat_amount DECIMAL
 );
 
 -- Function to create a single product
@@ -56,7 +56,8 @@ BEGIN
         unit_of_measure,
         units_per_pack,
         parent_product_id,
-        selling_price
+        selling_price,
+        input_vat_amount
     ) VALUES (
         COALESCE(p_product.id, gen_random_uuid()),
         p_product.name,
@@ -72,7 +73,8 @@ BEGIN
         COALESCE(p_product.unit_of_measure, 'unit'),
         COALESCE(p_product.units_per_pack, 1),
         p_product.parent_product_id,
-        COALESCE(p_product.selling_price, p_product.retail_price)
+        COALESCE(p_product.selling_price, p_product.retail_price),
+        COALESCE(p_product.input_vat_amount, 0)
     )
     RETURNING * INTO v_product;
 
@@ -105,6 +107,9 @@ BEGIN
 END;
 $$;
 
+-- Grant necessary permissions
+GRANT EXECUTE ON FUNCTION create_product(product_input) TO authenticated;
+GRANT EXECUTE ON FUNCTION create_products_batch(product_input[]) TO authenticated;
 -- Function to update stock for a single product
 CREATE OR REPLACE FUNCTION update_stock(
     p_product_id UUID,
@@ -171,3 +176,100 @@ GRANT EXECUTE ON FUNCTION create_product(product_input) TO authenticated;
 GRANT EXECUTE ON FUNCTION create_products_batch(product_input[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION update_stock(UUID, INTEGER, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION update_stock_batch(stock_update_input[]) TO authenticated;
+
+CREATE OR REPLACE FUNCTION create_sale(
+  p_store_id UUID,
+  p_products JSONB,
+  p_payment_method TEXT,
+  p_total_amount NUMERIC,
+  p_vat_total NUMERIC,
+  p_is_sync BOOLEAN DEFAULT FALSE
+)
+RETURNS UUID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_first_transaction_id UUID;
+  v_product JSONB;
+  v_total DECIMAL;
+  v_product_id UUID;
+  v_quantity INTEGER;
+  v_display_price DECIMAL;
+  v_vat_amount DECIMAL;
+BEGIN
+  -- Start transaction
+  BEGIN
+    -- Process each product and update stock
+    FOR v_product IN SELECT * FROM jsonb_array_elements(p_products)
+    LOOP
+      -- Extract values from JSON, try both id and product_id fields
+      v_product_id := COALESCE(
+        (v_product->>'id')::UUID,
+        (v_product->>'product_id')::UUID
+      );
+      v_quantity := (v_product->>'quantity')::INTEGER;
+      v_display_price := (v_product->>'displayPrice')::DECIMAL;
+      v_vat_amount := (v_product->>'vat_amount')::DECIMAL;
+      
+      -- Validate required fields
+      IF v_product_id IS NULL THEN
+        RAISE EXCEPTION 'Product ID is required';
+      END IF;
+      
+      IF v_quantity IS NULL THEN
+        RAISE EXCEPTION 'Quantity is required';
+      END IF;
+      
+      IF v_display_price IS NULL THEN
+        RAISE EXCEPTION 'Display price is required';
+      END IF;
+      
+      IF v_vat_amount IS NULL THEN
+        RAISE EXCEPTION 'VAT amount is required';
+      END IF;
+      
+      -- Calculate total for this product
+      v_total := v_display_price * v_quantity;
+
+      -- Create transaction item
+      INSERT INTO transactions (
+        store_id,
+        product_id,
+        quantity,
+        total,
+        vat_amount,
+        payment_method,
+        timestamp,
+        synced
+      )
+      VALUES (
+        p_store_id,
+        v_product_id,
+        v_quantity,
+        v_total,
+        v_vat_amount,
+        p_payment_method,
+        CURRENT_TIMESTAMP,
+        TRUE
+      )
+      RETURNING id INTO v_first_transaction_id;
+
+      -- Only update stock for online sales (non-sync operations)
+      IF NOT p_is_sync THEN
+        -- For direct online sales, use the reduction operation
+        PERFORM update_stock(
+          v_product_id,
+          -v_quantity,
+          p_store_id
+        );
+      END IF;
+    END LOOP;
+
+    RETURN v_first_transaction_id;
+  EXCEPTION
+    WHEN OTHERS THEN
+      -- Rollback will happen automatically
+      RAISE;
+  END;
+END;
+$$;

@@ -3,6 +3,7 @@ import { syncService } from '@/lib/sync';
 import { Database } from '@/types/supabase';
 import { db, processSyncQueue, saveOfflineProduct, updateOfflineStockQuantity } from '@/lib/db/index';
 import { useAuth } from '@/components/providers/AuthProvider';
+import { calculateVAT } from '@/lib/vat/utils';
 
 // Define the structure expected by the createSale RPC
 interface SaleInput {
@@ -150,19 +151,23 @@ export function useSync(store_id: string) {
         const sales = await syncService.getSalesWithProducts(store_id, startDate, endDate);
 
         return {
-          data: sales.map(sale => ({
-            id: sale.id,
-            product_id: sale.product_id || '',
-            quantity: sale.quantity,
-            total: sale.total,
-            vat_amount: sale.vat_amount || 0,
-            payment_method: sale.payment_method || 'cash',
-            timestamp: sale.timestamp || new Date().toISOString(),
-            products: sale.products ? {
-              ...sale.products,
-              selling_price: sale.products.selling_price || 0
-            } : null
-          }))
+          data: sales.map(sale => {
+            const vatCalculation = calculateVAT(sale.total, sale.products?.vat_status ?? true);
+            return {
+              id: sale.id,
+              product_id: sale.product_id || '',
+              quantity: sale.quantity,
+              total: sale.total,
+              vat_amount: vatCalculation.vatAmount,
+              payment_method: sale.payment_method || 'cash',
+              timestamp: sale.timestamp || new Date().toISOString(),
+              products: sale.products ? {
+                ...sale.products,
+                selling_price: sale.products.selling_price || 0,
+                vat_status: sale.products.vat_status ?? true
+              } : null
+            };
+          })
         };
       } else {
         // Direct fetch from IndexedDB for offline mode
@@ -172,7 +177,11 @@ export function useSync(store_id: string) {
           .and((transaction: OfflineTransaction) => {
             if (!transaction.timestamp) return false;
             const transactionDate = new Date(transaction.timestamp);
-            return transactionDate >= startDate && transactionDate <= endDate;
+            const startOfDay = new Date(startDate);
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(endDate);
+            endOfDay.setHours(23, 59, 59, 999);
+            return transactionDate >= startOfDay && transactionDate <= endOfDay;
           })
           .toArray() as OfflineTransaction[];
 
@@ -218,21 +227,23 @@ export function useSync(store_id: string) {
           
           return items.map(item => {
             const product = productsMap[item.product_id];
-            const unitPrice = item.price; // This is already the unit price from the sale item
+            const unitPrice = item.price;
+            const totalAmount = item.price * item.quantity;
+            const vatCalculation = calculateVAT(totalAmount, product?.vat_status ?? true);
             
             return {
               id: `${transaction.id}-${item.product_id}`,
               product_id: item.product_id,
               quantity: item.quantity,
-              total: item.price * item.quantity,
-              vat_amount: item.vat_amount,
+              total: totalAmount,
+              vat_amount: vatCalculation.vatAmount,
               payment_method: transaction.payment_method,
               timestamp: transaction.timestamp,
               products: product ? {
                 name: product.name,
                 sku: product.sku,
                 selling_price: unitPrice,
-                vat_status: product.vat_status,
+                vat_status: product.vat_status ?? true,
                 category: product.category
               } : {
                 name: 'Unknown Product',
@@ -270,11 +281,7 @@ export function useSync(store_id: string) {
 
   const updateStock = async (product_id: string, quantity_change: number) => {
     try {
-      const result = await syncService.updateStock({
-        product_id,
-        store_id,
-        quantity_change
-      });
+      const result = await syncService.updateStock(product_id, quantity_change);
       if (isOnline) {
         setLastSynced(new Date());
       }
