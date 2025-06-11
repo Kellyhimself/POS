@@ -118,34 +118,6 @@ const DashboardPage = () => {
       )}
 
       <div className="container mx-auto px-4 py-8 space-y-6">
-        {/* Sync Status */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-[#0ABAB5]' : 'bg-red-500'}`} />
-              <div className={`absolute inset-0 rounded-full ${isOnline ? 'bg-[#0ABAB5]' : 'bg-red-500'} animate-ping opacity-75`} />
-            </div>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {isOnline ? 'Online' : 'Offline'}
-            </span>
-          </div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
-            {syncStatus.isSyncing && (
-              <div className="flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#0ABAB5] border-t-transparent" />
-                <span className="text-sm text-gray-600 dark:text-gray-400">
-                  Syncing... {syncStatus.currentItem}/{syncStatus.totalItems}
-                </span>
-              </div>
-            )}
-            {syncStatus.lastSyncTime && (
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                Last sync: {new Date(syncStatus.lastSyncTime).toLocaleTimeString()}
-              </span>
-            )}
-          </div>
-        </div>
-
         {/* Quick Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-white dark:bg-gray-800 shadow-sm border-0">

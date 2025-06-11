@@ -3,6 +3,7 @@ DROP FUNCTION IF EXISTS create_product(product_input);
 DROP FUNCTION IF EXISTS create_products_batch(product_input[]);
 DROP FUNCTION IF EXISTS update_stock(UUID, INTEGER, UUID);
 DROP FUNCTION IF EXISTS update_stock_batch(stock_update_input[]);
+DROP FUNCTION IF EXISTS create_sale(UUID, JSONB, TEXT, NUMERIC, NUMERIC, BOOLEAN, TIMESTAMPTZ);
 DROP TYPE IF EXISTS product_input;
 DROP TYPE IF EXISTS stock_update_input;
 
@@ -183,10 +184,13 @@ CREATE OR REPLACE FUNCTION create_sale(
   p_payment_method TEXT,
   p_total_amount NUMERIC,
   p_vat_total NUMERIC,
-  p_is_sync BOOLEAN DEFAULT FALSE
+  p_is_sync BOOLEAN DEFAULT FALSE,
+  p_timestamp TIMESTAMPTZ DEFAULT NULL
 )
 RETURNS UUID
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_first_transaction_id UUID;
@@ -196,12 +200,46 @@ DECLARE
   v_quantity INTEGER;
   v_display_price DECIMAL;
   v_vat_amount DECIMAL;
+  v_error_context TEXT;
 BEGIN
   -- Start transaction
   BEGIN
-    -- Process each product and update stock
+    -- Log input parameters
+    RAISE NOTICE 'Starting create_sale with parameters: store_id=%, payment_method=%, total_amount=%, vat_total=%, is_sync=%, timestamp=%',
+      p_store_id, p_payment_method, p_total_amount, p_vat_total, p_is_sync, p_timestamp;
+    
+    -- Ensure p_products is an array
+    IF jsonb_typeof(p_products) != 'array' THEN
+      RAISE EXCEPTION 'Products parameter must be a JSON array';
+    END IF;
+
+    -- Get array length and log it
+    RAISE NOTICE 'Products array length: %', jsonb_array_length(p_products);
+    RAISE NOTICE 'Products array content: %', p_products;
+
+    -- Validate required parameters
+    IF p_store_id IS NULL THEN
+      RAISE EXCEPTION 'Store ID is required';
+    END IF;
+
+    IF p_products IS NULL OR jsonb_array_length(p_products) = 0 THEN
+      RAISE EXCEPTION 'Products array is required and must not be empty';
+    END IF;
+
+    IF p_payment_method IS NULL THEN
+      RAISE EXCEPTION 'Payment method is required';
+    END IF;
+
+    IF p_timestamp IS NULL THEN
+      RAISE EXCEPTION 'Timestamp is required';
+    END IF;
+
+    -- Process each product and create transaction records
     FOR v_product IN SELECT * FROM jsonb_array_elements(p_products)
     LOOP
+      -- Log product details
+      RAISE NOTICE 'Processing product: %', v_product;
+
       -- Extract values from JSON, try both id and product_id fields
       v_product_id := COALESCE(
         (v_product->>'id')::UUID,
@@ -211,25 +249,33 @@ BEGIN
       v_display_price := (v_product->>'displayPrice')::DECIMAL;
       v_vat_amount := (v_product->>'vat_amount')::DECIMAL;
       
+      -- Log extracted values
+      RAISE NOTICE 'Extracted values: product_id=%, quantity=%, display_price=%, vat_amount=%',
+        v_product_id, v_quantity, v_display_price, v_vat_amount;
+      
       -- Validate required fields
       IF v_product_id IS NULL THEN
-        RAISE EXCEPTION 'Product ID is required';
+        RAISE EXCEPTION 'Product ID is required for product: %', v_product;
       END IF;
       
       IF v_quantity IS NULL THEN
-        RAISE EXCEPTION 'Quantity is required';
+        RAISE EXCEPTION 'Quantity is required for product: %', v_product;
       END IF;
       
       IF v_display_price IS NULL THEN
-        RAISE EXCEPTION 'Display price is required';
+        RAISE EXCEPTION 'Display price is required for product: %', v_product;
       END IF;
       
       IF v_vat_amount IS NULL THEN
-        RAISE EXCEPTION 'VAT amount is required';
+        RAISE EXCEPTION 'VAT amount is required for product: %', v_product;
       END IF;
       
       -- Calculate total for this product
       v_total := v_display_price * v_quantity;
+
+      -- Log transaction details before insert
+      RAISE NOTICE 'Creating transaction: store_id=%, product_id=%, quantity=%, total=%, vat_amount=%, payment_method=%, timestamp=%',
+        p_store_id, v_product_id, v_quantity, v_total, v_vat_amount, p_payment_method, p_timestamp;
 
       -- Create transaction item
       INSERT INTO transactions (
@@ -249,27 +295,34 @@ BEGIN
         v_total,
         v_vat_amount,
         p_payment_method,
-        CURRENT_TIMESTAMP,
+        p_timestamp,
         TRUE
       )
       RETURNING id INTO v_first_transaction_id;
 
-      -- Only update stock for online sales (non-sync operations)
-      IF NOT p_is_sync THEN
-        -- For direct online sales, use the reduction operation
-        PERFORM update_stock(
-          v_product_id,
-          -v_quantity,
-          p_store_id
-        );
-      END IF;
+      -- Log successful insert
+      RAISE NOTICE 'Created transaction with ID: %', v_first_transaction_id;
     END LOOP;
 
+    -- Log final success
+    RAISE NOTICE 'Successfully created all transactions. First transaction ID: %', v_first_transaction_id;
     RETURN v_first_transaction_id;
   EXCEPTION
     WHEN OTHERS THEN
-      -- Rollback will happen automatically
-      RAISE;
+      -- Get detailed error context
+      GET STACKED DIAGNOSTICS v_error_context = PG_EXCEPTION_CONTEXT;
+      
+      -- Log the error details
+      RAISE NOTICE 'Error in create_sale: %', SQLERRM;
+      RAISE NOTICE 'Error context: %', v_error_context;
+      RAISE NOTICE 'Error detail: %', SQLSTATE;
+      RAISE NOTICE 'Products array that caused error: %', p_products;
+      
+      -- Re-raise the exception with context
+      RAISE EXCEPTION 'Error in create_sale: % (Context: %)', SQLERRM, v_error_context;
   END;
 END;
 $$;
+
+-- Grant necessary permissions
+GRANT EXECUTE ON FUNCTION create_sale(UUID, JSONB, TEXT, NUMERIC, NUMERIC, BOOLEAN, TIMESTAMPTZ) TO authenticated;

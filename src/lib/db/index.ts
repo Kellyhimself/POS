@@ -39,7 +39,7 @@ export class OfflineDB extends Dexie {
   constructor() {
     super('OfflineDB');
     this.version(3).stores({
-      products: 'id, store_id, name, sku, category, parent_product_id, synced, created_at, updated_at',
+      products: 'id, store_id, name, sku, category, parent_product_id, synced, created_at',
       stores: 'id, name, address, kra_pin, vat_number, etims_username, etims_password, kra_token, mpesa_details',
       transactions: 'id, store_id, payment_method, total_amount, vat_total, timestamp, synced, created_at',
       sale_items: 'id, sale_id, product_id, quantity, price, vat_amount, sale_mode, timestamp, created_at',
@@ -51,9 +51,6 @@ export class OfflineDB extends Dexie {
         tx.products.toCollection().modify(product => {
           if (!product.created_at) {
             product.created_at = new Date().toISOString();
-          }
-          if (!product.updated_at) {
-            product.updated_at = new Date().toISOString();
           }
         }),
         tx.transactions.toCollection().modify(transaction => {
@@ -203,25 +200,34 @@ interface SaleInput {
 
 export async function saveOfflineSale(sale: SaleInput) {
   const saleId = crypto.randomUUID();
-  const timestamp = new Date().toISOString();
+  
+  // Create timestamp in Kenya timezone
+  const keTime = new Date();
+  const timestamp = keTime.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' });
+  // Create a new date object in Kenya timezone
+  const keDate = new Date(timestamp);
+  // Format to ISO string while preserving the timezone offset
+  const timestampISO = keDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' });
+  const localTime = keTime.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' });
+  const utcTime = keTime.toUTCString();
 
-  console.log('📦 Starting saveOfflineSale:', {
-    sale_id: saleId,
-    products: sale.products.map(p => ({
-      id: p.id,
-      quantity: p.quantity
-    }))
-  });
+  // Ensure sale has a timestamp
+  const saleWithTimestamp = {
+    ...sale,
+    timestamp: sale.timestamp || timestampISO
+  };
+
+  
 
   // Create the sale record
   const saleRecord = {
     id: saleId,
-    store_id: sale.store_id,
-    payment_method: sale.payment_method,
-    total_amount: sale.total_amount,
-    vat_total: sale.vat_total,
-    timestamp,
-    created_at: timestamp,
+    store_id: saleWithTimestamp.store_id,
+    payment_method: saleWithTimestamp.payment_method,
+    total_amount: saleWithTimestamp.total_amount,
+    vat_total: saleWithTimestamp.vat_total,
+    timestamp: saleWithTimestamp.timestamp,
+    created_at: timestampISO,
     synced: false
   };
 
@@ -234,8 +240,8 @@ export async function saveOfflineSale(sale: SaleInput) {
     price: product.displayPrice,
     vat_amount: product.vat_amount,
     sale_mode: 'retail' as const,
-    timestamp,
-    created_at: timestamp
+    timestamp: timestampISO,
+    created_at: timestampISO
   }));
 
   // Use a transaction that includes all object stores we're modifying
@@ -267,14 +273,15 @@ export async function saveOfflineSale(sale: SaleInput) {
         await db.products.put({
           ...currentProduct,
           quantity: newQuantity,
-          updated_at: timestamp
+          synced: false
         });
 
         // Verify the update
         const updatedProduct = await db.products.get(product.id);
         console.log('📊 Product after update:', {
           product_id: product.id,
-          new_quantity: updatedProduct?.quantity
+          new_quantity: updatedProduct?.quantity,
+          synced: updatedProduct?.synced
         });
       } else {
         console.error('❌ Product not found in local DB:', {
@@ -303,8 +310,8 @@ export async function saveOfflineSale(sale: SaleInput) {
     payment_method: sale.payment_method,
     total_amount: sale.total_amount,
     vat_total: sale.vat_total,
-    timestamp,
-    created_at: timestamp,
+    timestamp: timestampISO,
+    created_at: timestampISO,
     synced: false,
     items: saleItems
   };
@@ -368,23 +375,146 @@ export async function processSyncQueue() {
   };
 }
 
-export async function getSalesReport(storeId: string, startDate: Date, endDate: Date) {
-  // Set start date to beginning of day and end date to end of day
+interface Product {
+  id: string;
+  name: string;
+  sku: string | null;
+  selling_price: number;
+  vat_status: boolean;
+  category: string | null;
+}
+
+interface SaleItem {
+  id: string;
+  sale_id: string;
+  product_id: string;
+  quantity: number;
+  price: number;
+  vat_amount: number;
+}
+
+interface Transaction {
+  id: string;
+  store_id: string;
+  timestamp: string;
+  payment_method: string;
+  total_amount: number;
+}
+
+interface TransactionWithProduct {
+  id: string;
+  product_id: string;
+  quantity: number;
+  total: number;
+  vat_amount: number;
+  payment_method: string;
+  timestamp: string;
+  products: {
+    name: string;
+    sku: string | null;
+    selling_price: number;
+    vat_status: boolean;
+    category: string | null;
+  };
+}
+
+export async function getSalesReport(storeId: string, startDate: Date, endDate: Date): Promise<TransactionWithProduct[]> {
+  console.log('📊 getSalesReport called with:', {
+    storeId,
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString()
+  });
+
+  // Set start date to beginning of day in Kenya timezone
   const startOfDay = new Date(startDate);
   startOfDay.setHours(0, 0, 0, 0);
   
+  // Set end date to end of day in Kenya timezone
   const endOfDay = new Date(endDate);
   endOfDay.setHours(23, 59, 59, 999);
 
-  return await db.transactions
+  console.log('📊 Date range for filtering:', {
+    startOfDay: startOfDay.toISOString(),
+    endOfDay: endOfDay.toISOString()
+  });
+
+  // Get transactions
+  const transactions = await db.transactions
     .where('store_id')
     .equals(storeId)
-    .and(transaction => {
-      if (!transaction.timestamp) return false;
+    .and((transaction: Transaction) => {
+      if (!transaction.timestamp) {
+        console.log('❌ Transaction missing timestamp:', transaction);
+        return false;
+      }
+      
+      // Convert transaction timestamp to Date object
       const transactionDate = new Date(transaction.timestamp);
-      return transactionDate >= startOfDay && transactionDate <= endOfDay;
+      
+      // Compare dates directly
+      const isInRange = transactionDate >= startOfDay && transactionDate <= endOfDay;
+      
+      if (isInRange) {
+        console.log('✅ Transaction in range:', {
+          id: transaction.id,
+          timestamp: transaction.timestamp,
+          date: transactionDate.toISOString()
+        });
+      }
+      
+      return isInRange;
     })
     .toArray();
+
+  // Get sale items for each transaction
+  const transactionsWithItems = await Promise.all(
+    transactions.map(async (transaction: Transaction) => {
+      const saleItems = await db.sale_items
+        .where('sale_id')
+        .equals(transaction.id)
+        .toArray();
+
+      // Get product details for each sale item
+      const itemsWithProducts = await Promise.all(
+        saleItems.map(async (item: SaleItem) => {
+          const product = await db.products.get(item.product_id) as Product | undefined;
+          return {
+            id: transaction.id,
+            product_id: item.product_id,
+            quantity: item.quantity,
+            total: item.price,
+            vat_amount: item.vat_amount,
+            payment_method: transaction.payment_method,
+            timestamp: transaction.timestamp,
+            products: {
+              name: product?.name || 'Unknown',
+              sku: product?.sku || null,
+              selling_price: product?.selling_price || 0,
+              vat_status: product?.vat_status || false,
+              category: product?.category || null
+            }
+          };
+        })
+      );
+
+      return itemsWithProducts;
+    })
+  );
+
+  // Flatten the array of arrays
+  const flattenedTransactions = transactionsWithItems.flat();
+
+  console.log('📊 Found transactions:', {
+    count: flattenedTransactions.length,
+    transactions: flattenedTransactions.map(t => ({
+      id: t.id,
+      timestamp: t.timestamp,
+      total: t.total,
+      product_name: t.products.name
+    }))
+  });
+
+  return flattenedTransactions;
 }
 
 export async function getStockReport(storeId: string) {
@@ -395,13 +525,25 @@ export async function getStockReport(storeId: string) {
 }
 
 export async function getETIMSReport(storeId: string, startDate: Date, endDate: Date) {
+  // Set start date to beginning of day in Kenya timezone
+  const startOfDay = new Date(startDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  // Set end date to end of day in Kenya timezone
+  const endOfDay = new Date(endDate);
+  endOfDay.setHours(23, 59, 59, 999);
+
   return await db.etims_submissions
     .where('store_id')
     .equals(storeId)
     .and(submission => {
       if (!submission.submitted_at) return false;
+      
+      // Convert submission timestamp to Date object
       const submissionDate = new Date(submission.submitted_at);
-      return submissionDate >= startDate && submissionDate <= endDate;
+      
+      // Compare dates directly
+      return submissionDate >= startOfDay && submissionDate <= endOfDay;
     })
     .toArray();
 }
@@ -468,8 +610,11 @@ export async function updateOfflineStockQuantity(productId: string, quantityToAd
 
   const newQuantity = product.quantity + quantityToAdd;
   
-  await db.products.update(productId, {
-    quantity: newQuantity
+  // Save the updated product and mark as unsynced
+  await db.products.put({
+    ...product,
+    quantity: newQuantity,
+    synced: false
   });
 
   // Record the stock update
@@ -484,6 +629,7 @@ export async function updateOfflineStockQuantity(productId: string, quantityToAd
 
   return {
     ...product,
-    quantity: newQuantity
+    quantity: newQuantity,
+    synced: false
   };
 } 

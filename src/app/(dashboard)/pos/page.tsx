@@ -18,6 +18,7 @@ import { Database } from '@/types/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSync } from '@/hooks/useSync';
 import { calculateVAT, formatVatStatus } from '@/lib/vat/utils';
+import { triggerProductSync } from '@/lib/hooks/useGlobalProductSync';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -316,37 +317,35 @@ const POSPage = () => {
   });
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-gray-100">
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Product Grid - Full width on mobile, flex-1 on desktop */}
-          <div className="flex-1 overflow-y-auto p-2 sm:p-4">
-            <ProductGrid 
-              onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} 
-              shouldRefetch={shouldRefetchProducts}
-            />
-          </div>
+    <div className="flex flex-col h-screen bg-gray-100">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        {/* Product Grid - Full width on mobile, flex-1 on desktop */}
+        <div className="flex-1 overflow-y-auto p-2 sm:p-4">
+          <ProductGrid 
+            onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} 
+            shouldRefetch={shouldRefetchProducts}
+          />
+        </div>
 
-          {/* Cart - Full width on mobile, fixed width on desktop */}
-          <div className="w-full lg:w-96 bg-white shadow-lg">
-            <Cart
-              items={cart}
-              onQuantityChange={handleQuantityChange}
-              onRemoveItem={handleRemoveItem}
-              onPaymentMethodChange={setPaymentMethod}
-              onVatToggle={handleVatToggle}
-              vatEnabled={vatEnabled}
-              paymentMethod={paymentMethod}
-              phone={phone}
-              onPhoneChange={setPhone}
-              onCheckout={() => paymentMutation.mutate()}
-              isProcessing={paymentMutation.isPending}
-              discountType={discountType}
-              discountValue={discountValue}
-              onDiscountTypeChange={setDiscountType}
-              onDiscountValueChange={setDiscountValue}
-            />
-          </div>
+        {/* Cart - Full width on mobile, fixed width on desktop */}
+        <div className="w-full lg:w-96 bg-white shadow-lg">
+          <Cart
+            items={cart}
+            onQuantityChange={handleQuantityChange}
+            onRemoveItem={handleRemoveItem}
+            onPaymentMethodChange={setPaymentMethod}
+            onVatToggle={handleVatToggle}
+            vatEnabled={vatEnabled}
+            paymentMethod={paymentMethod}
+            phone={phone}
+            onPhoneChange={setPhone}
+            onCheckout={() => paymentMutation.mutate()}
+            isProcessing={paymentMutation.isPending}
+            discountType={discountType}
+            discountValue={discountValue}
+            onDiscountTypeChange={setDiscountType}
+            onDiscountValueChange={setDiscountValue}
+          />
         </div>
       </div>
 

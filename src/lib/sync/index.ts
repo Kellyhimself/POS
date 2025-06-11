@@ -3,24 +3,17 @@ import {
   cacheProducts, 
   getCachedProducts,
   saveOfflineSale,
-  saveOfflineStockUpdate,
   saveOfflineETIMSSubmission,
   processSyncQueue,
   getSalesReport,
   getStockReport,
   getETIMSReport,
   db,
-  clearOfflineData
+  clearOfflineData,
+  updateOfflineStockQuantity
 } from '@/lib/db/index';
 import { Database } from '@/types/supabase';
 
-type Product = Database['public']['Tables']['products']['Row'];
-type Sale = Database['public']['Tables']['transactions']['Row'];
-type StockUpdate = {
-  product_id: string;
-  store_id: string;
-  quantity_change: number;
-};
 
 interface SaleInput {
   store_id: string;
@@ -129,14 +122,16 @@ export class SyncService {
           }));
 
           // Call createSale RPC - this will handle stock updates internally
-          console.log('🔄 Calling create_sale RPC...');
+          console.log('🔄 Calling create_sale RPC...with p_timestamp:', transaction.timestamp);
           const { data: transactionId, error } = await this.supabase
             .rpc('create_sale', {
               p_store_id: transaction.store_id,
               p_products: products,
               p_payment_method: transaction.payment_method,
               p_total_amount: transaction.total_amount,
-              p_vat_total: transaction.vat_total
+              p_vat_total: transaction.vat_total,
+              p_is_sync: true,
+              p_timestamp: transaction.timestamp
             });
 
           if (error) {
@@ -147,7 +142,7 @@ export class SyncService {
             throw error;
           }
 
-          // Mark transaction as synced and remove from pending queue
+          // Only mark transaction as synced after successful server sync
           await db.transactions.update(transaction.id, { synced: true });
           console.log('✅ Transaction synced successfully:', {
             transaction_id: transaction.id,
@@ -155,13 +150,6 @@ export class SyncService {
             server_transaction_id: transactionId
           });
 
-          // Remove the synced sale items
-          await db.sale_items
-            .where('sale_id')
-            .equals(transaction.id)
-            .delete();
-
-          console.log('🧹 Cleaned up synced sale items');
         } catch (error) {
           console.error(`❌ Failed to sync transaction ${transaction.id}:`, error);
           // Continue with next transaction even if one fails
@@ -173,13 +161,13 @@ export class SyncService {
   }
 
   // Save a sale (works offline)
-  public async saveSale(sale: SaleInput) {
+  public async saveSale(sale: SaleInput & { timestamp?: string }) {
     try {
       console.log('🔄 Starting saveSale process:', {
         store_id: sale.store_id,
         total_amount: sale.total_amount,
         product_count: sale.products.length,
-        is_sync: sale.is_sync,
+        timestamp: sale.timestamp,
         products: sale.products.map(p => ({
           id: p.id,
           quantity: p.quantity,
@@ -187,9 +175,11 @@ export class SyncService {
         }))
       });
 
-      const timestamp = new Date().toISOString();
+      // Create timestamp in Kenya timezone
+      const keTime = new Date();
+      const timestamp = sale.timestamp || keTime.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' });
 
-      // Save locally first with timestamp
+      // Always save locally first
       const offlineSale = await saveOfflineSale({
         ...sale,
         created_at: timestamp
@@ -208,100 +198,9 @@ export class SyncService {
         }))
       });
 
-      // If online, try to sync immediately
-      if (this.isOnline) {
-        console.log('🔄 Online - attempting immediate sync...');
-        
-        // If this is a sync operation, get the current quantities from local DB
-        let finalQuantities = null;
-        if (sale.is_sync) {
-          const products = await db.products
-            .where('id')
-            .anyOf(sale.products.map(p => p.id))
-            .toArray();
-          
-          finalQuantities = products.map(p => ({
-            product_id: p.id,
-            quantity: p.quantity
-          }));
-
-          console.log('📊 Current local quantities before sync:', {
-            products: products.map(p => ({
-              id: p.id,
-              quantity: p.quantity
-            }))
-          });
-        }
-        
-        // Call createSale RPC
-        console.log('🔄 Calling create_sale RPC with params:', {
-          store_id: sale.store_id,
-          is_sync: sale.is_sync,
-          products: sale.products.map(p => ({
-            id: p.id,
-            quantity: p.quantity
-          }))
-        });
-
-        const { data: transactionId, error } = await this.supabase
-          .rpc('create_sale', {
-            p_store_id: sale.store_id,
-            p_products: sale.products,
-            p_payment_method: sale.payment_method,
-            p_total_amount: sale.total_amount,
-            p_vat_total: sale.vat_total,
-            p_is_sync: sale.is_sync
-          });
-
-        if (error) {
-          console.error('❌ Error in saveSale:', {
-            store_id: sale.store_id,
-            error: error.message,
-            details: error.details,
-            hint: error.hint
-          });
-          throw error;
-        }
-
-        // Mark transaction as synced and remove from pending queue
-        await db.transactions.update(offlineSale.id, { 
-          synced: true,
-          created_at: timestamp
-        });
-        
-        // Get the updated transaction to verify the sync status
-        const updatedTransaction = await db.transactions.get(offlineSale.id);
-        
-        // Get the current quantities after sync
-        const productsAfterSync = await db.products
-          .where('id')
-          .anyOf(sale.products.map(p => p.id))
-          .toArray();
-
-        console.log('✅ Sync completed:', {
-          transaction_id: offlineSale.id,
-          store_id: sale.store_id,
-          server_transaction_id: transactionId,
-          synced: updatedTransaction?.synced,
-          created_at: timestamp,
-          quantities_after_sync: productsAfterSync.map(p => ({
-            id: p.id,
-            quantity: p.quantity
-          }))
-        });
-
-        // Remove the synced sale items
-        await db.sale_items
-          .where('sale_id')
-          .equals(offlineSale.id)
-          .delete();
-
-        console.log('🧹 Cleaned up synced sale items');
-      }
-
       return offlineSale;
     } catch (error) {
-      console.error('❌ Error syncing sale:', error);
+      console.error('❌ Error saving sale:', error);
       throw error;
     }
   }
@@ -309,36 +208,43 @@ export class SyncService {
   // Update stock (works offline)
   public async updateStock(productId: string, localQuantity: number) {
     try {
-      // First get the current product from Supabase
-      const { data: currentProduct, error: fetchError } = await this.supabase
-        .from('products')
-        .select('quantity')
-        .eq('id', productId)
-        .single();
+      if (this.isOnline) {
+        // Online flow - fetch from Supabase and update
+        const { data: currentProduct, error: fetchError } = await this.supabase
+          .from('products')
+          .select('quantity')
+          .eq('id', productId)
+          .single();
 
-      if (fetchError) throw fetchError;
+        if (fetchError) throw fetchError;
 
-      // Calculate the difference between local and remote quantities
-      const remoteQuantity = currentProduct?.quantity || 0;
-      const quantityDifference = localQuantity - remoteQuantity;
+        const currentQuantity = currentProduct?.quantity || 0;
+        const newQuantity = currentQuantity + localQuantity;
 
-      console.log('📊 Calculating quantity difference:', {
-        product_id: productId,
-        local_quantity: localQuantity,
-        remote_quantity: remoteQuantity,
-        difference: quantityDifference
-      });
+        console.log('📊 Calculating new quantity:', {
+          product_id: productId,
+          current_quantity: currentQuantity,
+          quantity_to_add: localQuantity,
+          new_quantity: newQuantity
+        });
 
-      // Update the product quantity
-      const { data, error } = await this.supabase
-        .from('products')
-        .update({ quantity: localQuantity })
-        .eq('id', productId)
-        .select()
-        .single();
+        const { data, error } = await this.supabase
+          .from('products')
+          .update({ quantity: newQuantity })
+          .eq('id', productId)
+          .select()
+          .single();
 
-      if (error) throw error;
-      return data;
+        if (error) throw error;
+        return data;
+      } else {
+        // Offline flow - use local database
+        console.log('📊 Updating stock offline:', {
+          product_id: productId,
+          quantity: localQuantity
+        });
+        return await updateOfflineStockQuantity(productId, localQuantity);
+      }
     } catch (error) {
       console.error('Error updating stock:', error);
       throw error;
@@ -416,15 +322,54 @@ export class SyncService {
         getETIMSReport(store_id, startDate, endDate)
       ]);
 
-      return {
-        sales,
-        stock,
-        etims,
-        generated_at: new Date(),
-        is_offline: !this.isOnline
+      // Transform sales data to match the expected format
+      const transformedSales = {
+        data: sales.map(sale => ({
+          id: sale.id,
+          product_id: sale.product_id,
+          quantity: sale.quantity,
+          total: sale.total,
+          vat_amount: sale.vat_amount,
+          payment_method: sale.payment_method,
+          timestamp: sale.timestamp,
+          products: sale.products
+        }))
       };
+
+      return transformedSales;
     } catch (error) {
       console.error('Error generating reports:', error);
+      throw error;
+    }
+  }
+
+  // Get stock report (works offline)
+  public async getStockReport(store_id: string) {
+    try {
+      // Get all products for the store
+      const products = await db.products
+        .where('store_id')
+        .equals(store_id)
+        .toArray();
+
+      // Transform the data to match the expected format
+      const transformedData = {
+        data: products.map(product => ({
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          category: product.category,
+          quantity: product.quantity,
+          low_stock: product.quantity <= (product.low_stock_threshold || 0),
+          retail_price: product.selling_price,
+          wholesale_price: product.wholesale_price,
+          wholesale_threshold: product.wholesale_threshold
+        }))
+      };
+
+      return transformedData;
+    } catch (error) {
+      console.error('Error getting stock report:', error);
       throw error;
     }
   }
@@ -534,6 +479,84 @@ export class SyncService {
 
     if (error) throw error;
     return data;
+  }
+
+  public async createSale(sale: {
+    store_id: string;
+    products: Array<{
+      id: string;
+      quantity: number;
+      displayPrice: number;
+      vat_amount: number;
+    }>;
+    payment_method: 'cash' | 'mpesa';
+    total_amount: number;
+    vat_total: number;
+    timestamp: string;
+  }) {
+    try {
+      // Log the exact data being sent to RPC
+      console.log('📤 [SyncService] Calling create_sale RPC with data:', {
+        store_id: sale.store_id,
+        products: sale.products,
+        payment_method: sale.payment_method,
+        total_amount: sale.total_amount,
+        vat_total: sale.vat_total,
+        timestamp: sale.timestamp,
+        timestamp_details: {
+          original: sale.timestamp,
+          parsed: new Date(sale.timestamp).toISOString(),
+          local_ke: new Date(sale.timestamp).toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }),
+          utc: new Date(sale.timestamp).toUTCString()
+        }
+      });
+
+      const { data, error } = await this.supabase
+        .rpc('create_sale', {
+          p_store_id: sale.store_id,
+          p_products: sale.products,
+          p_payment_method: sale.payment_method,
+          p_total_amount: sale.total_amount,
+          p_vat_total: sale.vat_total,
+          p_is_sync: true,
+          p_timestamp: sale.timestamp
+        });
+
+      if (error) {
+        console.error('❌ [SyncService] Error in create_sale RPC:', {
+          error: error.message,
+          details: error.details,
+          timestamp: sale.timestamp
+        });
+        throw error;
+      }
+
+      console.log('✅ [SyncService] create_sale RPC successful:', {
+        transaction_id: data,
+        timestamp: sale.timestamp
+      });
+
+      return { data, error: null };
+    } catch (error) {
+      console.error('❌ [SyncService] Error creating sale:', error);
+      return { data: null, error };
+    }
+  }
+
+  public async getTransaction(transactionId: string) {
+    try {
+      const { data, error } = await this.supabase
+        .from('transactions')
+        .select('*')
+        .eq('id', transactionId)
+        .single();
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      console.error('Error getting transaction:', error);
+      return { data: null, error };
+    }
   }
 }
 

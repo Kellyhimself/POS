@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { syncService } from '@/lib/sync';
 import { Database } from '@/types/supabase';
-import { db, processSyncQueue, saveOfflineProduct, updateOfflineStockQuantity } from '@/lib/db/index';
+import { db, processSyncQueue, saveOfflineProduct, updateOfflineStockQuantity, getSalesReport } from '@/lib/db/index';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { calculateVAT } from '@/lib/vat/utils';
 
@@ -46,6 +46,7 @@ interface OfflineTransaction {
   vat_total: number;
   timestamp: string;
   synced: boolean;
+  created_at: string;
 }
 
 interface OfflineSaleItem {
@@ -57,6 +58,7 @@ interface OfflineSaleItem {
   vat_amount: number;
   sale_mode: 'retail' | 'wholesale';
   timestamp: string;
+  created_at: string;
 }
 
 interface InventoryReportData {
@@ -80,8 +82,8 @@ export function useSync(store_id: string) {
 
   useEffect(() => {
     const handleOnline = () => {
-      // Trigger sync when coming back online
-      sync();
+      // No need to trigger sync here as useGlobalSaleSync will handle it
+      setLastSynced(new Date());
     };
 
     window.addEventListener('online', handleOnline);
@@ -90,181 +92,6 @@ export function useSync(store_id: string) {
       window.removeEventListener('online', handleOnline);
     };
   }, [store_id]);
-
-  const sync = async () => {
-    if (!isOnline) return;
-    
-    setIsSyncing(true);
-    try {
-      // Get offline data
-      const { pendingTransactions } = await processSyncQueue();
-      
-      // Process offline sales using createSale RPC
-      for (const transaction of pendingTransactions) {
-        try {
-          // Get sale items for this transaction
-          const saleItems = await db.sale_items
-            .where('sale_id')
-            .equals(transaction.id)
-            .toArray();
-
-          // Prepare products array for createSale RPC
-          const products = saleItems.map(item => ({
-            id: item.product_id,
-            quantity: item.quantity,
-            displayPrice: item.price,
-            vat_amount: item.vat_amount
-          }));
-
-          // Call createSale RPC through syncService
-          await syncService.saveSale({
-            store_id: transaction.store_id,
-            products,
-            payment_method: transaction.payment_method as 'cash' | 'mpesa',
-            total_amount: transaction.total_amount,
-            vat_total: transaction.vat_total
-          });
-
-          // Mark transaction as synced
-          await db.transactions.update(transaction.id, { synced: true });
-        } catch (error) {
-          console.error('Error syncing sale:', error);
-          // Continue with other sales even if one fails
-        }
-      }
-
-      // Get latest data after sync
-      await syncService.initialSync(store_id);
-      setLastSynced(new Date());
-    } catch (error) {
-      console.error('Sync failed:', error);
-      throw error;
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const generateReports = async (startDate: Date, endDate: Date): Promise<ReportData> => {
-    try {
-      if (isOnline) {
-        // Get online reports with product details
-        const sales = await syncService.getSalesWithProducts(store_id, startDate, endDate);
-
-        return {
-          data: sales.map(sale => {
-            const vatCalculation = calculateVAT(sale.total, sale.products?.vat_status ?? true);
-            return {
-              id: sale.id,
-              product_id: sale.product_id || '',
-              quantity: sale.quantity,
-              total: sale.total,
-              vat_amount: vatCalculation.vatAmount,
-              payment_method: sale.payment_method || 'cash',
-              timestamp: sale.timestamp || new Date().toISOString(),
-              products: sale.products ? {
-                ...sale.products,
-                selling_price: sale.products.selling_price || 0,
-                vat_status: sale.products.vat_status ?? true
-              } : null
-            };
-          })
-        };
-      } else {
-        // Direct fetch from IndexedDB for offline mode
-        const transactions = await db.transactions
-          .where('store_id')
-          .equals(store_id)
-          .and((transaction: OfflineTransaction) => {
-            if (!transaction.timestamp) return false;
-            const transactionDate = new Date(transaction.timestamp);
-            const startOfDay = new Date(startDate);
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date(endDate);
-            endOfDay.setHours(23, 59, 59, 999);
-            return transactionDate >= startOfDay && transactionDate <= endOfDay;
-          })
-          .toArray() as OfflineTransaction[];
-
-        if (transactions.length === 0) {
-          return { data: [] };
-        }
-
-        // Get all sale items for these transactions
-        const saleItems = await db.sale_items
-          .where('sale_id')
-          .anyOf(transactions.map(t => t.id))
-          .toArray() as OfflineSaleItem[];
-
-        if (saleItems.length === 0) {
-          return { data: [] };
-        }
-
-        // Get all products involved in these sales
-        const productIds = [...new Set(saleItems.map(item => item.product_id))];
-        const products = await db.products
-          .where('id')
-          .anyOf(productIds)
-          .toArray();
-
-        // Create a map of products for quick lookup
-        const productsMap = products.reduce<Record<string, Database['public']['Tables']['products']['Row']>>((acc, product) => {
-          acc[product.id] = product;
-          return acc;
-        }, {});
-
-        // Group sale items by sale_id
-        const saleItemsBySaleId = saleItems.reduce<Record<string, OfflineSaleItem[]>>((acc, item) => {
-          if (!acc[item.sale_id]) {
-            acc[item.sale_id] = [];
-          }
-          acc[item.sale_id].push(item);
-          return acc;
-        }, {});
-
-        // Transform offline sales to match the expected format
-        const transformedSales = transactions.map(transaction => {
-          const items = saleItemsBySaleId[transaction.id] || [];
-          
-          return items.map(item => {
-            const product = productsMap[item.product_id];
-            const unitPrice = item.price;
-            const totalAmount = item.price * item.quantity;
-            const vatCalculation = calculateVAT(totalAmount, product?.vat_status ?? true);
-            
-            return {
-              id: `${transaction.id}-${item.product_id}`,
-              product_id: item.product_id,
-              quantity: item.quantity,
-              total: totalAmount,
-              vat_amount: vatCalculation.vatAmount,
-              payment_method: transaction.payment_method,
-              timestamp: transaction.timestamp,
-              products: product ? {
-                name: product.name,
-                sku: product.sku,
-                selling_price: unitPrice,
-                vat_status: product.vat_status ?? true,
-                category: product.category
-              } : {
-                name: 'Unknown Product',
-                sku: null,
-                selling_price: unitPrice,
-                vat_status: true,
-                category: null
-              }
-            };
-          });
-        }).flat();
-
-        return {
-          data: transformedSales
-        };
-      }
-    } catch (error) {
-      console.error('Error generating reports:', error);
-      throw error;
-    }
-  };
 
   const saveSale = async (sale: SaleInput) => {
     try {
@@ -319,50 +146,18 @@ export function useSync(store_id: string) {
     }
   };
 
-  const generateInventoryReport = async (): Promise<InventoryReportData> => {
+  const generateReports = async (startDate: Date, endDate: Date) => {
     try {
-      if (isOnline) {
-        // Get online inventory report from Supabase
-        const products = await syncService.getProducts(store_id);
+      return await syncService.generateReports(store_id, startDate, endDate);
+    } catch (error) {
+      console.error('Error generating reports:', error);
+      throw error;
+    }
+  };
 
-        return {
-          data: products.map((product: Database['public']['Tables']['products']['Row']) => ({
-            id: product.id,
-            name: product.name,
-            sku: product.sku,
-            category: product.category,
-            quantity: product.quantity,
-            low_stock: product.quantity <= (product.wholesale_threshold || 0),
-            retail_price: product.retail_price,
-            wholesale_price: product.wholesale_price,
-            wholesale_threshold: product.wholesale_threshold
-          }))
-        };
-      } else {
-        // Direct fetch from IndexedDB for offline mode
-        const products = await db.products
-          .where('store_id')
-          .equals(store_id)
-          .toArray();
-
-        if (products.length === 0) {
-          return { data: [] };
-        }
-
-        return {
-          data: products.map((product: Database['public']['Tables']['products']['Row']) => ({
-            id: product.id,
-            name: product.name,
-            sku: product.sku,
-            category: product.category,
-            quantity: product.quantity,
-            low_stock: product.quantity <= (product.wholesale_threshold || 0),
-            retail_price: product.retail_price,
-            wholesale_price: product.wholesale_price,
-            wholesale_threshold: product.wholesale_threshold
-          }))
-        };
-      }
+  const generateInventoryReport = async () => {
+    try {
+      return await syncService.getStockReport(store_id);
     } catch (error) {
       console.error('Error generating inventory report:', error);
       throw error;
@@ -371,12 +166,11 @@ export function useSync(store_id: string) {
 
   const createProduct = async (product: Database['public']['Tables']['products']['Insert']) => {
     try {
+      const result = await syncService.createProduct(product);
       if (isOnline) {
-        return await syncService.createProduct(product);
-      } else {
-        // Save product offline
-        return await saveOfflineProduct(product);
+        setLastSynced(new Date());
       }
+      return result;
     } catch (error) {
       console.error('Error creating product:', error);
       throw error;
@@ -385,13 +179,11 @@ export function useSync(store_id: string) {
 
   const createProductsBatch = async (products: Database['public']['Tables']['products']['Insert'][]) => {
     try {
+      const result = await syncService.createProductsBatch(products);
       if (isOnline) {
-        return await syncService.createProductsBatch(products);
-      } else {
-        // Save products offline in batch
-        const results = await Promise.all(products.map(product => saveOfflineProduct(product)));
-        return results;
+        setLastSynced(new Date());
       }
+      return result;
     } catch (error) {
       console.error('Error creating products batch:', error);
       throw error;
@@ -400,14 +192,13 @@ export function useSync(store_id: string) {
 
   const addStockQuantity = async (productId: string, quantityToAdd: number) => {
     try {
+      const result = await syncService.updateStock(productId, quantityToAdd);
       if (isOnline) {
-        return await syncService.updateStock(productId, quantityToAdd);
-      } else {
-        // Update stock offline
-        return await updateOfflineStockQuantity(productId, quantityToAdd);
+        setLastSynced(new Date());
       }
+      return result;
     } catch (error) {
-      console.error('Error updating stock:', error);
+      console.error('Error adding stock quantity:', error);
       throw error;
     }
   };

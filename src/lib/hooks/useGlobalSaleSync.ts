@@ -1,10 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { db } from '@/lib/db';
 import { syncService } from '@/lib/sync';
-import type { Database } from '@/types/supabase';
-
-type Product = Database['public']['Tables']['products']['Row'];
+import { getProductSyncStatus } from './useGlobalProductSync';
 
 export interface SyncStatus {
   isSyncing: boolean;
@@ -13,6 +11,18 @@ export interface SyncStatus {
   lastSyncTime: Date | null;
   error: string | null;
 }
+
+// Create a module-level variable to store the sync status
+let globalSaleSyncStatus: SyncStatus = {
+  isSyncing: false,
+  currentItem: 0,
+  totalItems: 0,
+  lastSyncTime: null,
+  error: null
+};
+
+// Function to get the current sync status
+export const getSaleSyncStatus = () => globalSaleSyncStatus;
 
 export function useGlobalSaleSync() {
   const { user, isOnline } = useAuth();
@@ -23,16 +33,86 @@ export function useGlobalSaleSync() {
     lastSyncTime: null,
     error: null
   });
+  const syncInProgress = useRef(false);
 
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
 
     const syncSales = async () => {
-      if (!user?.user_metadata?.store_id || !isOnline) return;
+      console.log('🔄 Sync attempt started:', {
+        syncInProgress: syncInProgress.current,
+        hasStoreId: !!user?.user_metadata?.store_id,
+        isOnline,
+        lastSyncTime: globalSaleSyncStatus.lastSyncTime,
+        currentStatus: globalSaleSyncStatus
+      });
+
+      // Skip if already syncing or conditions aren't met
+      if (syncInProgress.current) {
+        console.log('⏸️ Sync prevented - sync already in progress');
+        return;
+      }
+
+      if (!user?.user_metadata?.store_id) {
+        console.log('⏸️ Sync prevented - no store ID');
+        return;
+      }
+
+      if (!isOnline) {
+        console.log('⏸️ Sync prevented - offline');
+        return;
+      }
+
+      // Don't start sale sync if product sync is in progress
+      const productSyncStatus = getProductSyncStatus();
+      if (productSyncStatus.isSyncing) {
+        console.log('⏳ Waiting for product sync to complete...', {
+          productSyncStatus: {
+            isSyncing: productSyncStatus.isSyncing,
+            currentItem: productSyncStatus.currentItem,
+            totalItems: productSyncStatus.totalItems
+          }
+        });
+        // Retry after a short delay
+        setTimeout(syncSales, 1000);
+        return;
+      }
+
+      // If product sync failed, wait for next cycle
+      if (productSyncStatus.error) {
+        console.log('⏳ Product sync failed, waiting for next cycle...', {
+          error: productSyncStatus.error
+        });
+        return;
+      }
 
       try {
+        console.log('🔒 Acquiring sync lock');
+        syncInProgress.current = true;
         setSyncStatus(prev => ({ ...prev, isSyncing: true, error: null }));
+        globalSaleSyncStatus = { ...syncStatus, isSyncing: true, error: null };
         
+        // First check if there are any pending products
+        const pendingProducts = await db.products
+          .filter(product => product.synced === false)
+          .toArray();
+
+        if (pendingProducts.length > 0) {
+          console.log('⏳ Skipping sale sync - pending products exist:', {
+            pendingProductsCount: pendingProducts.length,
+            productIds: pendingProducts.map(p => p.id)
+          });
+          setSyncStatus(prev => ({ 
+            ...prev, 
+            isSyncing: false,
+            error: 'Pending products need to be synced first'
+          }));
+          globalSaleSyncStatus = { ...syncStatus, isSyncing: false, error: 'Pending products need to be synced first' };
+          // Retry after a short delay
+          setTimeout(syncSales, 1000);
+          return;
+        }
+
         // Get all pending transactions ordered by creation time
         const pendingTransactions = await db.transactions
           .filter(transaction => transaction.synced === false)
@@ -43,79 +123,45 @@ export function useGlobalSaleSync() {
             )
           );
 
+        console.log('📊 Found pending transactions:', {
+          count: pendingTransactions.length,
+          transactionIds: pendingTransactions.map(t => t.id)
+        });
+
         setSyncStatus(prev => ({ ...prev, totalItems: pendingTransactions.length }));
+        globalSaleSyncStatus = { ...syncStatus, totalItems: pendingTransactions.length };
         
         for (const [index, transaction] of pendingTransactions.entries()) {
           try {
             setSyncStatus(prev => ({ ...prev, currentItem: index + 1 }));
+            globalSaleSyncStatus = { ...syncStatus, currentItem: index + 1 };
             
+            // Double check if transaction is still unsynced
+            const currentTransaction = await db.transactions.get(transaction.id);
+            if (!currentTransaction || currentTransaction.synced) {
+              console.log('⏭️ Skipping already synced transaction:', {
+                transaction_id: transaction.id,
+                exists: !!currentTransaction,
+                synced: currentTransaction?.synced
+              });
+              continue;
+            }
+
             // Get sale items for this transaction
             const saleItems = await db.sale_items
               .where('sale_id')
               .equals(transaction.id)
-              .toArray()
-              .then(items => 
-                items.sort((a, b) => 
-                  new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime()
-                )
-              );
-
-            const productIds = [...new Set(saleItems.map(item => item.product_id))];
-            const products = await db.products
-              .where('id')
-              .anyOf(productIds)
               .toArray();
 
-            // Check if any products need to be synced first
-            const unsyncedProducts = products.filter(p => !p.synced);
-            if (unsyncedProducts.length > 0) {
-              console.log('🔄 Found unsynced products, syncing them first:', unsyncedProducts);
-              try {
-                // First check which products exist in Supabase
-                const { data: existingProducts, error: fetchError } = await syncService.supabase
-                  .from('products')
-                  .select('id')
-                  .in('id', unsyncedProducts.map(p => p.id));
-
-                if (fetchError) throw fetchError;
-
-                const existingProductIds = new Set(existingProducts?.map(p => p.id) || []);
-                
-                // Split products into new and existing
-                const newProducts = unsyncedProducts.filter(p => !existingProductIds.has(p.id));
-                const existingProductsToUpdate = unsyncedProducts.filter(p => existingProductIds.has(p.id));
-
-                // Handle new products
-                if (newProducts.length > 0) {
-                  console.log('📦 Creating new products:', newProducts);
-                  await syncService.createProductsBatch(newProducts);
-                }
-
-                // Handle existing products
-                if (existingProductsToUpdate.length > 0) {
-                  console.log('📦 Updating existing products:', existingProductsToUpdate);
-                  const updatePromises = existingProductsToUpdate.map(product => 
-                    syncService.updateStock(product.id, product.quantity)
-                  );
-                  await Promise.all(updatePromises);
-                }
-                
-                // Update local products as synced
-                await Promise.all(
-                  unsyncedProducts.map(product => 
-                    db.products.update(product.id, { synced: true })
-                  )
-                );
-              } catch (error) {
-                console.error('Error syncing products:', error);
-                // Continue with sale sync even if product sync fails
-              }
-            }
-
-            const productsMap = products.reduce<Record<string, Product>>((acc, product) => {
-              acc[product.id] = product;
-              return acc;
-            }, {});
+            console.log('📦 Raw sale items from DB:', {
+              transaction_id: transaction.id,
+              items_count: saleItems.length,
+              items: saleItems.map(item => ({
+                id: item.id,
+                product_id: item.product_id,
+                quantity: item.quantity
+              }))
+            });
 
             const productsForSync = saleItems.map(item => ({
               id: item.product_id,
@@ -124,37 +170,128 @@ export function useGlobalSaleSync() {
               vat_amount: item.vat_amount
             }));
 
-            await syncService.saveSale({
+            console.log('🔄 Preparing to sync transaction:', {
+              transaction_id: transaction.id,
               store_id: transaction.store_id,
-              products: productsForSync,
-              payment_method: transaction.payment_method as 'cash' | 'mpesa',
+              timestamp: transaction.timestamp,
+              timestamp_local_ke: new Date(transaction.timestamp).toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }),
+              timestamp_utc: new Date(transaction.timestamp).toUTCString(),
+              current_time: {
+                iso: new Date().toISOString(),
+                local_ke: new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }),
+                utc: new Date().toUTCString()
+              },
+              time_difference: {
+                hours: (new Date(transaction.timestamp).getTime() - new Date().getTime()) / (1000 * 60 * 60),
+                minutes: (new Date(transaction.timestamp).getTime() - new Date().getTime()) / (1000 * 60)
+              },
+              payment_method: transaction.payment_method,
               total_amount: transaction.total_amount,
               vat_total: transaction.vat_total,
-              is_sync: true
+              products: productsForSync,
+              products_length: productsForSync.length,
+              products_json: JSON.stringify(productsForSync)
             });
 
-            await db.transactions.update(transaction.id, { 
-              synced: true,
-              report_data: {
-                product_id: saleItems[0]?.product_id || '',
-                quantity: saleItems[0]?.quantity || 0,
-                products: saleItems[0] ? {
-                  name: productsMap[saleItems[0].product_id]?.name || 'Unknown Product',
-                  sku: productsMap[saleItems[0].product_id]?.sku || null,
-                  selling_price: productsMap[saleItems[0].product_id]?.selling_price || saleItems[0].price,
-                  vat_status: productsMap[saleItems[0].product_id]?.vat_status || true,
-                  category: productsMap[saleItems[0].product_id]?.category || null
-                } : null
+            try {
+              // Validate products array before RPC call
+              if (!productsForSync || productsForSync.length === 0) {
+                throw new Error('No products found for transaction');
               }
-            });
+
+              // Log the exact data being sent to RPC
+              console.log('📤 Calling create_sale RPC with data:', {
+                store_id: transaction.store_id,
+                products: productsForSync,
+                payment_method: transaction.payment_method,
+                total_amount: transaction.total_amount,
+                vat_total: transaction.vat_total,
+                timestamp: transaction.timestamp,
+                timestamp_details: {
+                  original: transaction.timestamp,
+                  parsed: new Date(transaction.timestamp).toISOString(),
+                  local_ke: new Date(transaction.timestamp).toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }),
+                  utc: new Date(transaction.timestamp).toUTCString()
+                }
+              });
+
+              // Call createSale RPC through syncService
+              const { data: transactionId, error } = await syncService.createSale({
+                store_id: transaction.store_id,
+                products: productsForSync,
+                payment_method: transaction.payment_method as 'cash' | 'mpesa',
+                total_amount: transaction.total_amount,
+                vat_total: transaction.vat_total,
+                timestamp: transaction.timestamp
+              });
+
+              if (error) {
+                console.error('❌ Error syncing transaction:', {
+                  transaction_id: transaction.id,
+                  error: error instanceof Error ? error.message : 'Unknown error',
+                  details: error instanceof Error ? error.stack : undefined
+                });
+                throw error;
+              }
+
+              if (!transactionId) {
+                console.error('❌ No transaction ID returned from RPC:', {
+                  transaction_id: transaction.id,
+                  response: { data: transactionId, error }
+                });
+                throw new Error('No transaction ID returned from RPC');
+              }
+
+              console.log('✅ Successfully synced transaction:', {
+                transaction_id: transaction.id,
+                server_transaction_id: transactionId
+              });
+
+              // Mark transaction as synced
+              await db.transactions.update(transaction.id, { synced: true });
+              console.log('✅ Marked transaction as synced:', {
+                transaction_id: transaction.id,
+                server_transaction_id: transactionId
+              });
+
+              // Verify the sync
+              const { data: syncedTransaction, error: verifyError } = await syncService.getTransaction(transactionId);
+
+              if (verifyError) {
+                console.error('❌ Error verifying sync:', {
+                  transaction_id: transaction.id,
+                  server_transaction_id: transactionId,
+                  error: verifyError instanceof Error ? verifyError.message : 'Unknown error'
+                });
+              } else {
+                console.log('✅ Verified sync in database:', {
+                  transaction_id: transaction.id,
+                  server_transaction_id: transactionId,
+                  synced_data: syncedTransaction
+                });
+              }
+            } catch (error) {
+              console.error('❌ Error in sync process:', {
+                transaction_id: transaction.id,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
+              });
+              throw error;
+            }
           } catch (error) {
             console.error('Error syncing transaction:', error);
             setSyncStatus(prev => ({ 
               ...prev, 
               error: `Failed to sync transaction ${index + 1}`
             }));
+            globalSaleSyncStatus = { ...syncStatus, error: `Failed to sync transaction ${index + 1}` };
           }
         }
+
+        console.log('✅ Sync cycle completed:', {
+          lastSyncTime: new Date(),
+          totalTransactionsProcessed: pendingTransactions.length
+        });
 
         setSyncStatus(prev => ({ 
           ...prev, 
@@ -163,6 +300,13 @@ export function useGlobalSaleSync() {
           currentItem: 0,
           totalItems: 0
         }));
+        globalSaleSyncStatus = { 
+          ...syncStatus, 
+          isSyncing: false, 
+          lastSyncTime: new Date(),
+          currentItem: 0,
+          totalItems: 0
+        };
       } catch (err) {
         console.error('Error in sync process:', err);
         setSyncStatus(prev => ({ 
@@ -170,19 +314,45 @@ export function useGlobalSaleSync() {
           isSyncing: false, 
           error: 'Failed to process sync queue'
         }));
+        globalSaleSyncStatus = { 
+          ...syncStatus, 
+          isSyncing: false, 
+          error: 'Failed to process sync queue'
+        };
+      } finally {
+        console.log('🔓 Releasing sync lock');
+        syncInProgress.current = false;
       }
     };
 
-    if (isOnline && user?.user_metadata?.store_id) {
-      syncSales();
-    }
+    const setupSync = async () => {
+      if (isOnline && user?.user_metadata?.store_id) {
+        console.log('🔄 Initial sync triggered:', {
+          store_id: user.user_metadata.store_id,
+          isOnline
+        });
 
-    if (isOnline) {
-      syncInterval = setInterval(syncSales, 5 * 60 * 1000);
-    }
+        // Check if sync is already in progress
+        if (syncInProgress.current) {
+          console.log('⏸️ Initial sync prevented - sync already in progress');
+          return;
+        }
+
+        await syncSales();
+        
+        // Only set up interval after initial sync completes and if still online
+        if (isOnline && !syncInProgress.current) {
+          console.log('⏰ Setting up sync interval');
+          syncInterval = setInterval(syncSales, 5 * 60 * 1000);
+        }
+      }
+    };
+
+    setupSync();
 
     return () => {
       if (syncInterval) {
+        console.log('🧹 Cleaning up sync interval');
         clearInterval(syncInterval);
       }
     };

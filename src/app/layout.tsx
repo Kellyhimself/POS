@@ -17,27 +17,43 @@ const inter = Inter({ subsets: ['latin'] });
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
-  // Initialize background sync hooks
-  useGlobalProductSync();
-  useGlobalSaleSync();
-  useGlobalProductCache();
+  // Initialize hooks at the top level
+  const productSync = useGlobalProductSync();
+  const saleSync = useGlobalSaleSync();
+  const productCache = useGlobalProductCache();
+
+  // Log when auth is ready and sync should start
+  React.useEffect(() => {
+    if (!loading && user?.user_metadata?.store_id) {
+      console.log('🔄 Auth ready for sync', {
+        storeId: user.user_metadata.store_id,
+        isOnline: navigator.onLine
+      });
+    }
+  }, [loading, user]);
 
   // Log app state for debugging
   React.useEffect(() => {
     console.log('App State:', {
       user: user ? 'Logged in' : 'Not logged in',
-      path: pathname
+      path: pathname,
+      storeId: user?.user_metadata?.store_id,
+      loading
     });
-  }, [user, pathname]);
+  }, [user, pathname, loading]);
 
   // Redirect to login if not authenticated
   React.useEffect(() => {
-    if (!user && pathname !== '/login') {
+    if (!loading && !user && pathname !== '/login') {
       router.push('/login');
     }
-  }, [user, pathname, router]);
+  }, [user, pathname, router, loading]);
+
+  if (loading) {
+    return null;
+  }
 
   if (!user && pathname !== '/login') {
     return null;
