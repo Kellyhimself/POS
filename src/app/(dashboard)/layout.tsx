@@ -103,26 +103,6 @@ export default function DashboardLayout({
     return isStateValid;
   };
 
-  // Handle redirection only after loading is complete
-  useEffect(() => {
-    if (!loading && !isValidAppState()) {
-      const currentPath = window.location.pathname;
-      if (!currentPath.startsWith('/login')) {
-        console.log('🔄 Setting redirect flag due to invalid state');
-        setShouldRedirect(true);
-      }
-    }
-  }, [loading, appState]);
-
-  // Handle actual redirection in a separate effect
-  useEffect(() => {
-    if (shouldRedirect) {
-      console.log('🔄 Redirecting to login due to invalid state');
-      router.push('/login');
-      setShouldRedirect(false);
-    }
-  }, [shouldRedirect, router]);
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -131,13 +111,11 @@ export default function DashboardLayout({
     );
   }
 
+  // Let middleware handle redirects, just show loading state if invalid
   if (!isValidAppState()) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2"> </h2>
-          <p className="text-gray-600">Please wait while we redirect you.</p>
-        </div>
+        <LoadingSpinner />
       </div>
     );
   }

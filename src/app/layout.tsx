@@ -47,6 +47,18 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
               });
             }
           });
+
+          // Handle service worker errors
+          registration.addEventListener('error', (error) => {
+            console.error('Service Worker registration error:', error);
+          });
+
+          // Handle service worker messages
+          navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'SKIP_WAITING') {
+              window.location.reload();
+            }
+          });
         } catch (error) {
           console.error('Service Worker registration failed:', error);
         }
@@ -80,18 +92,8 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
     });
   }, [user, pathname, loading]);
 
-  // Redirect to login if not authenticated
-  React.useEffect(() => {
-    if (!loading && !user && pathname !== '/login') {
-      router.push('/login');
-    }
-  }, [user, pathname, router, loading]);
-
+  // Remove the redirect effect and let middleware handle it
   if (loading) {
-    return null;
-  }
-
-  if (!user && pathname !== '/login') {
     return null;
   }
 
