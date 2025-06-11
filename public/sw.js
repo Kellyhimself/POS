@@ -65,20 +65,6 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Helper function to handle API requests
-async function handleApiRequest(request) {
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      return response;
-    }
-    throw new Error('API request failed');
-  } catch (error) {
-    // For API requests, we don't cache them as they're handled by IndexedDB
-    throw error;
-  }
-}
-
 // Helper function to handle static requests
 async function handleStaticRequest(request) {
   const cache = await caches.open(CACHE_NAME);
@@ -94,7 +80,12 @@ async function handleStaticRequest(request) {
     }
     throw new Error('Static request failed');
   } catch (error) {
-    return cache.match(OFFLINE_URL);
+    // Try to serve from cache even if it's not an exact match
+    const cachedResponse = await cache.match(request.url);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    return caches.match(OFFLINE_URL);
   }
 }
 
@@ -104,6 +95,7 @@ async function handleNavigationRequest(request) {
   const pageCache = await caches.open(PAGE_CACHE_NAME);
   
   try {
+    // Try network first
     const response = await fetch(request);
     if (response.ok) {
       // Cache the page for offline use
@@ -126,6 +118,7 @@ async function handleNavigationRequest(request) {
       }
     }
     
+    // Only show offline page if we can't serve any cached content
     return caches.match(OFFLINE_URL);
   }
 }
@@ -151,7 +144,14 @@ self.addEventListener('fetch', (event) => {
 
   // Handle API requests - let them pass through to IndexedDB
   if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase.co')) {
-    event.respondWith(fetch(request));
+    event.respondWith(fetch(request).catch(() => {
+      // For API requests, we don't want to show the offline page
+      // Instead, let the app handle the offline state
+      return new Response(JSON.stringify({ error: 'offline' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }));
     return;
   }
 
@@ -180,6 +180,7 @@ self.addEventListener('fetch', (event) => {
         if (response) {
           return response;
         }
+        // Only show offline page for navigation requests
         if (request.mode === 'navigate') {
           return caches.match(OFFLINE_URL);
         }

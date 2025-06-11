@@ -4,7 +4,7 @@ import nextPWA from 'next-pwa';
 
 const withPWA = nextPWA({
   dest: 'public',
-  disable: false,
+  disable: process.env.NODE_ENV === 'development',
   register: true,
   scope: '/',
   skipWaiting: true,
@@ -81,6 +81,18 @@ const withPWA = nextPWA({
       handler: 'NetworkFirst',
       options: {
         cacheName: 'supabase-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 24 * 60 * 60
+        }
+      }
+    },
+    {
+      urlPattern: /^https:\/\/pos\.veylor360\.com\/.*$/i,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'app-cache',
         networkTimeoutSeconds: 10,
         expiration: {
           maxEntries: 100,
