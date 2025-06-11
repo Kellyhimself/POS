@@ -26,9 +26,22 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
 
   // Register service worker
   React.useEffect(() => {
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
       const registerSW = async () => {
         try {
+          // Wait for the page to be fully loaded
+          if (document.readyState !== 'complete') {
+            await new Promise(resolve => window.addEventListener('load', resolve));
+          }
+
+          // Check if service worker is already registered
+          const existingRegistration = await navigator.serviceWorker.getRegistration();
+          if (existingRegistration) {
+            console.log('Service Worker already registered with scope:', existingRegistration.scope);
+            return;
+          }
+
+          // Register new service worker
           const registration = await navigator.serviceWorker.register('/sw.js', {
             scope: '/',
             updateViaCache: 'none'
@@ -64,11 +77,7 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
         }
       };
 
-      if (document.readyState === 'complete') {
-        registerSW();
-      } else {
-        window.addEventListener('load', registerSW);
-      }
+      registerSW();
     }
   }, []);
 
