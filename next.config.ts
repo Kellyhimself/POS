@@ -183,6 +183,29 @@ const nextConfig: NextConfig = {
   //     },
   //   ],
   // },
+  // Add rewrite rules for static assets
+  async rewrites() {
+    return [
+      {
+        source: '/icons/:path*',
+        destination: '/icons/:path*',
+      },
+    ]
+  },
+  // Ensure static assets are properly handled
+  async headers() {
+    return [
+      {
+        source: '/icons/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ]
+  },
 };
 
 export default withPWA(nextConfig);
