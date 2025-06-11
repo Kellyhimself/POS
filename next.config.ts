@@ -9,6 +9,8 @@ const withPWA = nextPWA({
   scope: '/',
   skipWaiting: true,
   sw: '/sw.js',
+  buildExcludes: [/middleware-manifest.json$/],
+  publicExcludes: ['!robots.txt'],
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,
@@ -167,6 +169,14 @@ const nextConfig: NextConfig = {
         source: '/icons/:path*',
         destination: '/icons/:path*',
       },
+      {
+        source: '/manifest.json',
+        destination: '/manifest.json',
+      },
+      {
+        source: '/sw.js',
+        destination: '/sw.js',
+      }
     ]
   },
   // Ensure static assets are properly handled
@@ -181,6 +191,28 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        source: '/manifest.json',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/manifest+json',
+          },
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, must-revalidate',
+          },
+        ],
+      },
+      {
+        source: '/sw.js',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, must-revalidate',
+          },
+        ],
+      }
     ]
   },
 };

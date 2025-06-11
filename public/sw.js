@@ -162,15 +162,28 @@ self.addEventListener('fetch', (event) => {
 
   // Handle API requests - let them pass through to IndexedDB
   if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase.co')) {
-    event.respondWith(fetch(request).catch(() => {
-      console.log('⚠️ API request failed, returning offline response');
-      // For API requests, we don't want to show the offline page
-      // Instead, let the app handle the offline state
-      return new Response(JSON.stringify({ error: 'offline' }), {
-        status: 503,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }));
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          // Cache successful API responses
+          if (response.ok) {
+            const clonedResponse = response.clone();
+            caches.open('api-cache').then(cache => {
+              cache.put(request, clonedResponse);
+            });
+          }
+          return response;
+        })
+        .catch(() => {
+          console.log('⚠️ API request failed, returning offline response');
+          // For API requests, we don't want to show the offline page
+          // Instead, let the app handle the offline state
+          return new Response(JSON.stringify({ error: 'offline' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        })
+    );
     return;
   }
 
@@ -194,21 +207,32 @@ self.addEventListener('fetch', (event) => {
 
   // Default handling for other requests
   event.respondWith(
-    fetch(request).catch(() => {
-      console.log('⚠️ Request failed, trying cache:', request.url);
-      return caches.match(request).then((response) => {
-        if (response) {
-          console.log('📦 Serving from cache:', request.url);
-          return response;
+    fetch(request)
+      .then(response => {
+        // Cache successful responses
+        if (response.ok) {
+          const clonedResponse = response.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(request, clonedResponse);
+          });
         }
-        // Only show offline page for navigation requests
-        if (request.mode === 'navigate') {
-          console.log('❌ No cached version available, showing offline page');
-          return caches.match(OFFLINE_URL);
-        }
-        return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
-      });
-    })
+        return response;
+      })
+      .catch(() => {
+        console.log('⚠️ Request failed, trying cache:', request.url);
+        return caches.match(request).then((response) => {
+          if (response) {
+            console.log('📦 Serving from cache:', request.url);
+            return response;
+          }
+          // Only show offline page for navigation requests
+          if (request.mode === 'navigate') {
+            console.log('❌ No cached version available, showing offline page');
+            return caches.match(OFFLINE_URL);
+          }
+          return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+        });
+      })
   );
 });
 

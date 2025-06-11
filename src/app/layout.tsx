@@ -27,16 +27,36 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   // Register service worker
   React.useEffect(() => {
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then((registration) => {
-            console.log('Service Worker registered with scope:', registration.scope);
-          })
-          .catch((error) => {
-            console.error('Service Worker registration failed:', error);
+      const registerSW = async () => {
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js', {
+            scope: '/',
+            updateViaCache: 'none'
           });
-      });
+          console.log('Service Worker registered with scope:', registration.scope);
+          
+          // Check for updates
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New content is available, reload the page
+                  window.location.reload();
+                }
+              });
+            }
+          });
+        } catch (error) {
+          console.error('Service Worker registration failed:', error);
+        }
+      };
+
+      if (document.readyState === 'complete') {
+        registerSW();
+      } else {
+        window.addEventListener('load', registerSW);
+      }
     }
   }, []);
 
