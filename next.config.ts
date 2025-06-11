@@ -8,6 +8,30 @@ const withPWA = nextPWA({
   register: true,
   scope: '/',
   skipWaiting: true,
+  sw: '/sw.js',
+  manifest: {
+    name: 'POS System',
+    short_name: 'POS',
+    description: 'Point of Sale and Inventory Management System',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#ffffff',
+    theme_color: '#0ABAB5',
+    icons: [
+      {
+        src: '/icons/icon-192x192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any maskable'
+      },
+      {
+        src: '/icons/icon-512x512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any maskable'
+      }
+    ]
+  },
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,
@@ -99,6 +123,18 @@ const withPWA = nextPWA({
           maxAgeSeconds: 24 * 60 * 60
         }
       }
+    },
+    {
+      urlPattern: /^https:\/\/pos-git-test-kellyhimselfs-projects\.vercel\.app\/.*$/i,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'app-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 24 * 60 * 60
+        }
+      }
     }
   ]
 });
@@ -108,7 +144,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000', 'pos.veylor360.com'],
+      allowedOrigins: ['localhost:3000', 'pos.veylor360.com', 'pos-git-test-kellyhimselfs-projects.vercel.app'],
       bodySizeLimit: '2mb'
     },
   },

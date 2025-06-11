@@ -25,6 +25,7 @@ const STATIC_ASSETS = [
 
 // Install event - cache static assets and initialize state cache
 self.addEventListener('install', (event) => {
+  console.log('📦 Service Worker installing...');
   event.waitUntil(
     Promise.all([
       caches.open(CACHE_NAME).then((cache) => {
@@ -43,13 +44,16 @@ self.addEventListener('install', (event) => {
         console.log('📦 Initializing page cache');
         return cache.addAll(NAVIGATION_ROUTES);
       })
-    ])
+    ]).then(() => {
+      console.log('✅ Service Worker installed successfully');
+      return self.skipWaiting();
+    })
   );
-  self.skipWaiting();
 });
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
+  console.log('🔄 Service Worker activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -60,9 +64,11 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
+    }).then(() => {
+      console.log('✅ Service Worker activated successfully');
+      return self.clients.claim();
     })
   );
-  self.clients.claim();
 });
 
 // Helper function to handle static requests
@@ -70,21 +76,26 @@ async function handleStaticRequest(request) {
   const cache = await caches.open(CACHE_NAME);
   const cachedResponse = await cache.match(request);
   if (cachedResponse) {
+    console.log('📦 Serving static asset from cache:', request.url);
     return cachedResponse;
   }
   try {
     const response = await fetch(request);
     if (response.ok) {
       await cache.put(request, response.clone());
+      console.log('📦 Cached new static asset:', request.url);
       return response;
     }
     throw new Error('Static request failed');
   } catch (error) {
+    console.log('⚠️ Static request failed, trying cache:', request.url);
     // Try to serve from cache even if it's not an exact match
     const cachedResponse = await cache.match(request.url);
     if (cachedResponse) {
+      console.log('📦 Serving static asset from cache (fallback):', request.url);
       return cachedResponse;
     }
+    console.log('❌ No cached version available for:', request.url);
     return caches.match(OFFLINE_URL);
   }
 }
@@ -100,13 +111,16 @@ async function handleNavigationRequest(request) {
     if (response.ok) {
       // Cache the page for offline use
       await pageCache.put(request, response.clone());
+      console.log('📦 Cached new page:', url.pathname);
       return response;
     }
     throw new Error('Navigation request failed');
   } catch (error) {
+    console.log('⚠️ Navigation request failed, trying cache:', url.pathname);
     // Try to get cached page
     const cachedPage = await pageCache.match(request);
     if (cachedPage) {
+      console.log('📦 Serving page from cache:', url.pathname);
       return cachedPage;
     }
     
@@ -114,22 +128,26 @@ async function handleNavigationRequest(request) {
     if (NAVIGATION_ROUTES.includes(url.pathname)) {
       const cachedResponse = await pageCache.match(url.pathname);
       if (cachedResponse) {
+        console.log('📦 Serving navigation route from cache:', url.pathname);
         return cachedResponse;
       }
     }
     
+    console.log('❌ No cached version available for:', url.pathname);
     // Only show offline page if we can't serve any cached content
     return caches.match(OFFLINE_URL);
   }
 }
 
 // Helper function to handle state requests
-async function handleStateRequest(request) {
+async function handleStateRequest() {
   const cache = await caches.open(STATE_CACHE_NAME);
   const cachedState = await cache.match('/app-state');
   if (cachedState) {
+    console.log('📦 Serving state from cache');
     return cachedState;
   }
+  console.log('📦 Initializing new state');
   return new Response(JSON.stringify({
     user: null,
     store: null,
@@ -145,6 +163,7 @@ self.addEventListener('fetch', (event) => {
   // Handle API requests - let them pass through to IndexedDB
   if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase.co')) {
     event.respondWith(fetch(request).catch(() => {
+      console.log('⚠️ API request failed, returning offline response');
       // For API requests, we don't want to show the offline page
       // Instead, let the app handle the offline state
       return new Response(JSON.stringify({ error: 'offline' }), {
@@ -157,7 +176,7 @@ self.addEventListener('fetch', (event) => {
 
   // Handle state requests
   if (url.pathname === '/app-state') {
-    event.respondWith(handleStateRequest(request));
+    event.respondWith(handleStateRequest());
     return;
   }
 
@@ -176,12 +195,15 @@ self.addEventListener('fetch', (event) => {
   // Default handling for other requests
   event.respondWith(
     fetch(request).catch(() => {
+      console.log('⚠️ Request failed, trying cache:', request.url);
       return caches.match(request).then((response) => {
         if (response) {
+          console.log('📦 Serving from cache:', request.url);
           return response;
         }
         // Only show offline page for navigation requests
         if (request.mode === 'navigate') {
+          console.log('❌ No cached version available, showing offline page');
           return caches.match(OFFLINE_URL);
         }
         return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
