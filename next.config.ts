@@ -9,29 +9,6 @@ const withPWA = nextPWA({
   scope: '/',
   skipWaiting: true,
   sw: '/sw.js',
-  manifest: {
-    name: 'POS System',
-    short_name: 'POS',
-    description: 'Point of Sale and Inventory Management System',
-    start_url: '/',
-    display: 'standalone',
-    background_color: '#ffffff',
-    theme_color: '#0ABAB5',
-    icons: [
-      {
-        src: '/icons/icon-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any maskable'
-      },
-      {
-        src: '/icons/icon-512x512.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'any maskable'
-      }
-    ]
-  },
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,

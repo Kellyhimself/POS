@@ -1,7 +1,7 @@
 {
   "name": "POS System",
   "short_name": "POS",
-  "description": "Point of Sale System with Offline Support",
+  "description": "Point of Sale and Inventory Management System",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
