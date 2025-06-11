@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase-clients/pages';
 import { syncService } from '@/lib/sync';
 import { generateOfflineToken, validateOfflineToken } from '@/lib/auth/encryption';
 import type { UserMetadata } from '@/lib/auth/encryption';
+import { hashPassword, validateOfflineCredentials } from '@/lib/auth/encryption';
 
 interface AuthContextType {
   user: User | null;
@@ -18,7 +19,7 @@ interface AuthContextType {
   isOnline: boolean;
   signIn: (email: string, password: string) => Promise<{ data: { session: Session | null } | null; error: AuthError | null }>;
   signUp: (email: string, password: string, role: string, store_id: string) => Promise<{ data: { session: Session | null } | null; error: AuthError | null }>;
-  signOut: () => Promise<{ error: AuthError | null }>;
+  signOut: (password?: string) => Promise<{ error: AuthError | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -56,7 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return {
             userId: tokenData.userId,
             storeId: tokenData.storeId,
-            userMetadata: tokenData.userMetadata
+            userMetadata: tokenData.userMetadata,
+            credentials: tokenData.credentials
           };
         }
       } catch (error) {
@@ -96,11 +98,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Function to set offline token cookie
-  const setOfflineTokenCookie = (userId: string, storeId: string, userMetadata: UserMetadata, storeName: string) => {
+  const setOfflineTokenCookie = (
+    userId: string, 
+    storeId: string, 
+    userMetadata: UserMetadata, 
+    storeName: string,
+    email?: string,
+    password?: string
+  ) => {
+    const credentials = email ? {
+      email,
+      password, // Include password for offline login
+      hashedPassword: hashPassword(password || '') // Always hash for offline validation
+    } : undefined;
+
     const offlineToken = generateOfflineToken(userId, storeId, {
       ...userMetadata,
-      store_name: storeName
-    });
+      store_name: storeName,
+      email // Include email in user metadata
+    }, credentials);
+    
     document.cookie = `offline_token=${offlineToken}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
   };
 
@@ -150,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const offlineContext = getOfflineContext();
       if (offlineContext) {
-        const { userId, storeId, userMetadata } = offlineContext;
+        const { userId, storeId, userMetadata, credentials } = offlineContext;
         
         // Create a mock session for offline mode
         const mockUser = {
@@ -300,7 +317,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               session.user.id,
               session.user.user_metadata.store_id,
               session.user.user_metadata,
-              storeData.name
+              storeData.name,
+              session.user.user_metadata.email,
+              session.user.user_metadata.password
             );
           }
 
@@ -367,7 +386,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             session.user.id,
             session.user.user_metadata.store_id,
             session.user.user_metadata,
-            storeData.name
+            storeData.name,
+            session.user.user_metadata.email,
+            session.user.user_metadata.password
           );
         }
         
@@ -425,43 +446,112 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isOnline,
     signIn: async (email: string, password: string) => {
       try {
+        console.log('🔐 AuthProvider - Starting sign in process');
+        console.log('🌐 AuthProvider - Online status:', isOnline);
+        
         if (isOnline) {
+          console.log('🔄 AuthProvider - Attempting online sign in');
           const { data, error } = await signIn(email, password);
+          
+          if (error) {
+            console.error('❌ AuthProvider - Online sign in error:', error);
+            return { data, error };
+          }
+          
           if (!error && data?.session) {
+            console.log('✅ AuthProvider - Online sign in successful');
+            console.log('👤 AuthProvider - User data:', {
+              id: data.session.user.id,
+              email: data.session.user.email,
+              storeId: data.session.user.user_metadata.store_id
+            });
+            
             setSession(data.session);
             setUser(data.session.user);
             setStoreId(data.session.user.user_metadata.store_id);
             
-            // Set offline token cookie
+            // Fetch store name first
+            console.log('🏪 AuthProvider - Fetching store details');
+            const { data: storeData } = await supabase
+              .from('stores')
+              .select('name')
+              .eq('id', data.session.user.user_metadata.store_id)
+              .single();
+            
+            console.log('🏪 AuthProvider - Store data:', storeData);
+            
+            // Set offline token cookie with credentials
+            console.log('🔑 AuthProvider - Setting offline token with credentials');
             setOfflineTokenCookie(
               data.session.user.id,
               data.session.user.user_metadata.store_id,
-              data.session.user.user_metadata,
-              data.session.user.user_metadata.store_name || ''
+              {
+                ...data.session.user.user_metadata,
+                email
+              },
+              storeData?.name || '',
+              email,
+              password
             );
             
             // Cache app state
+            console.log('💾 AuthProvider - Caching app state');
             await cacheAppState({
               user: data.session.user,
-              store: { id: data.session.user.user_metadata.store_id },
+              store: { 
+                id: data.session.user.user_metadata.store_id,
+                name: storeData?.name
+              },
               lastSync: Date.now()
             });
             
-            await fetchAndCacheStoreName(data.session.user.user_metadata.store_id);
+            if (storeData?.name) {
+              setStoreName(storeData.name);
+            }
           }
           return { data, error };
         } else {
+          console.log('📴 AuthProvider - Attempting offline sign in');
           const offlineContext = getOfflineContext();
-          if (offlineContext) {
+          console.log('🔑 AuthProvider - Offline context:', offlineContext ? 'Found' : 'Not found');
+          
+          if (offlineContext?.credentials) {
+            console.log('🔐 AuthProvider - Validating offline credentials');
+            console.log('📝 AuthProvider - Stored credentials:', {
+              email: offlineContext.credentials.email,
+              hasPassword: !!offlineContext.credentials.password,
+              hasHashedPassword: !!offlineContext.credentials.hashedPassword
+            });
+            
+            const isValid = await validateOfflineCredentials(offlineContext.credentials, email, password);
+            if (isValid) {
+              console.log('✅ AuthProvider - Offline credentials validated successfully');
+              
+              // If the token was marked as signed out, create a new one without the signedOut flag
+              if (offlineContext.userMetadata?.signedOut) {
+                console.log('🔄 AuthProvider - Creating new offline token without signedOut flag');
+                const newOfflineToken = generateOfflineToken(
+                  offlineContext.userId,
+                  offlineContext.storeId,
+                  {
+                    ...offlineContext.userMetadata,
+                    signedOut: false // Remove signedOut flag
+                  },
+                  offlineContext.credentials // Preserve the original credentials
+                );
+                document.cookie = `offline_token=${newOfflineToken}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+              }
+              
             const mockSession = {
               access_token: '',
               refresh_token: '',
               expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).getTime() / 1000
             } as Session;
+              
             setSession(mockSession);
             setUser({
               id: offlineContext.userId,
-              email: '',
+                email: offlineContext.credentials.email,
               user_metadata: { 
                 store_id: offlineContext.storeId,
                 first_name: offlineContext.userMetadata?.first_name,
@@ -472,12 +562,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               aud: 'authenticated',
               created_at: new Date().toISOString()
             } as User);
+              
             setStoreId(offlineContext.storeId);
+            // Refresh to dashboard on successful offline login
+            window.location.href = '/dashboard';
             return { data: { session: mockSession }, error: null };
+            } else {
+              console.log('❌ AuthProvider - Offline credentials validation failed');
+            }
+          } else {
+            console.log('❌ AuthProvider - No offline credentials found');
           }
-          return { data: null, error: new AuthError('No valid offline credentials found. Please login while online first.') };
+          return { data: null, error: new AuthError('Invalid offline credentials') };
         }
       } catch (error) {
+        console.error('❌ AuthProvider - Unexpected error during sign in:', error);
         return { data: null, error: error as AuthError };
       }
     },
@@ -491,6 +590,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(data.session);
           setUser(data.session.user);
           setStoreId(data.session.user.user_metadata.store_id);
+          
+          // Set offline token cookie with credentials
+          setOfflineTokenCookie(
+            data.session.user.id,
+            data.session.user.user_metadata.store_id,
+            data.session.user.user_metadata,
+            data.session.user.user_metadata.store_name || '',
+            email,
+            password // Include password for offline login
+          );
+          
           await fetchAndCacheStoreName(data.session.user.user_metadata.store_id);
         }
         return { data, error };
@@ -498,11 +608,89 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { data: null, error: error as AuthError };
       }
     },
-    signOut: async () => {
+    signOut: async (password?: string) => {
       try {
+        console.log('🔐 AuthProvider - Starting sign out process');
+        console.log('🌐 AuthProvider - Online status:', isOnline);
+        
         if (isOnline) {
+          console.log('🔄 AuthProvider - Performing online sign out');
           await signOut();
+          // Only remove offline token when online
+          document.cookie = 'offline_token=; path=/; max-age=0; SameSite=Lax';
+          console.log('✅ AuthProvider - Online sign out completed');
+        } else {
+          console.log('📴 AuthProvider - Performing offline sign out');
+          // When offline, preserve credentials but mark as signed out
+          const offlineContext = getOfflineContext();
+          console.log('🔑 AuthProvider - Offline context before signout:', offlineContext ? 'Found' : 'Not found');
+          
+          if (offlineContext) {
+            console.log('📝 AuthProvider - Preserving offline credentials');
+            console.log('👤 AuthProvider - User ID:', offlineContext.userId);
+            console.log('🏪 AuthProvider - Store ID:', offlineContext.storeId);
+            
+            // Create new user metadata with signedOut flag
+            const updatedUserMetadata = {
+              ...offlineContext.userMetadata,
+              signedOut: true
+            };
+            
+            console.log('📝 AuthProvider - Updated user metadata:', updatedUserMetadata);
+            
+            // Ensure we preserve the original credentials
+            if (!offlineContext.credentials) {
+              console.error('❌ AuthProvider - No credentials found in offline context');
+              return { error: new AuthError('No credentials found in offline context') };
+            }
+            
+            // Always ensure we have a hashed password for offline validation
+            const preservedCredentials = {
+              email: offlineContext.credentials.email,
+              password: password || offlineContext.credentials.password, // Use provided password or stored password
+              hashedPassword: offlineContext.credentials.hashedPassword || await hashPassword(password || offlineContext.credentials.password || '')
+            };
+            
+            console.log('🔑 AuthProvider - Preserved credentials:', {
+              email: preservedCredentials.email,
+              hasPassword: !!preservedCredentials.password,
+              hasHashedPassword: !!preservedCredentials.hashedPassword
+            });
+            
+            const offlineToken = generateOfflineToken(
+              offlineContext.userId,
+              offlineContext.storeId,
+              updatedUserMetadata,
+              preservedCredentials
+            );
+            
+            // Store the token with normal expiration
+            document.cookie = `offline_token=${offlineToken}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`;
+            console.log('✅ AuthProvider - Offline token preserved with credentials');
+            
+            // Verify the token was set
+            const verifyToken = getOfflineContext();
+            console.log('🔍 AuthProvider - Verifying token after setting:', verifyToken ? 'Found' : 'Not found');
+            if (verifyToken) {
+              console.log('📝 AuthProvider - Verified token data:', {
+                userId: verifyToken.userId,
+                storeId: verifyToken.storeId,
+                hasCredentials: !!verifyToken.credentials,
+                signedOut: verifyToken.userMetadata?.signedOut
+              });
+            }
+            
+            if (!verifyToken) {
+              console.error('❌ AuthProvider - Failed to set offline token');
+              return { error: new AuthError('Failed to set offline token') };
+            }
+          } else {
+            console.log('⚠️ AuthProvider - No offline context found during offline signout');
+          }
         }
+          
+          // Clear state immediately
+        console.log('🧹 AuthProvider - Clearing application state');
         setUser(null);
         setSession(null);
         setStoreId(null);
@@ -513,8 +701,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           store: null,
           lastSync: null
         });
+        console.log('✅ AuthProvider - Application state cleared');
+        
+        // Redirect to login
+        console.log('🔄 AuthProvider - Redirecting to login page');
+        // window.location.href = '/login';
         return { error: null };
       } catch (error) {
+        console.error('❌ AuthProvider - Error during sign out:', error);
         return { error: error as AuthError };
       }
     },

@@ -16,6 +16,21 @@ export async function middleware(req: NextRequest) {
     try {
       const tokenData = validateOfflineToken(offlineToken);
       console.log('🔐 Middleware - Offline token validation result:', !!tokenData);
+      
+      // Check if the token has been marked for signout
+      if (tokenData?.userMetadata?.signedOut) {
+        console.log('🚪 Middleware - Offline token marked for signout');
+        
+        // If we're already on the login page, just return the response
+        if (req.nextUrl.pathname.startsWith('/login')) {
+          return res;
+        }
+        
+        // Otherwise redirect to login, but preserve the token
+        const redirectUrl = new URL('/login', req.url)
+        return NextResponse.redirect(redirectUrl)
+      }
+      
       if (tokenData) {
         // Token is valid, allow access to all routes except auth routes
         if (req.nextUrl.pathname.startsWith('/login') || req.nextUrl.pathname.startsWith('/register')) {

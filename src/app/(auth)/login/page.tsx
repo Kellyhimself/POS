@@ -41,7 +41,7 @@ export default function LoginPage() {
       if (data?.session) {
         // Wait a moment to ensure the session is set
         await new Promise(resolve => setTimeout(resolve, 1000));
-        router.push('/dashboard');
+        router.push('/');
       } else {
         setError('Authentication failed. Please try again.');
       }
@@ -73,7 +73,7 @@ export default function LoginPage() {
         {!isOnline && (
           <div className="flex items-center justify-center text-yellow-600 bg-yellow-50 p-3 rounded-md">
             <WifiOff className="h-5 w-5 mr-2" />
-            <span className="text-sm">You&apos;re offline. Using cached credentials.</span>
+            <span className="text-sm">You&apos;re offline. Please enter your credentials to sign in.</span>
           </div>
         )}
 
@@ -92,7 +92,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#0ABAB5] focus:border-[#0ABAB5]"
-                disabled={loading || !isOnline}
+                disabled={loading}
               />
             </div>
             <div>
@@ -108,7 +108,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#0ABAB5] focus:border-[#0ABAB5]"
-                disabled={loading || !isOnline}
+                disabled={loading}
               />
             </div>
           </div>
@@ -119,9 +119,9 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading || !isOnline}
+            disabled={loading}
             className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-              loading || !isOnline
+              loading
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-[#0ABAB5] hover:bg-[#099C98] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0ABAB5]'
             }`}
