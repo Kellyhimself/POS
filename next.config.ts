@@ -75,6 +75,18 @@ const withPWA = nextPWA({
           maxAgeSeconds: 24 * 60 * 60
         }
       }
+    },
+    {
+      urlPattern: /^https:\/\/xugqiojkjvqzqewugldk\.supabase\.co\/.*$/i,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'supabase-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 24 * 60 * 60
+        }
+      }
     }
   ]
 });
@@ -84,7 +96,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000'],
+      allowedOrigins: ['localhost:3000', 'pos.veylor360.com'],
       bodySizeLimit: '2mb'
     },
   },

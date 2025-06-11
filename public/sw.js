@@ -3,13 +3,22 @@ const OFFLINE_URL = '/offline';
 const STATE_CACHE_NAME = 'app-state-v1';
 const PAGE_CACHE_NAME = 'page-cache-v1';
 
+// All navigation routes from Sidebar
+const NAVIGATION_ROUTES = [
+  '/dashboard',
+  '/pos',
+  '/inventory',
+  '/reports',
+  '/settings',
+  '/bulk-operations'
+];
+
 // Static assets to cache
 const STATIC_ASSETS = [
   '/',
   '/offline',
   '/manifest.json',
-  '/icon-192x192.png',
-  '/icon-512x512.png',
+  '/next.svg',
   '/_next/static/css/app.css',
   '/_next/static/js/main.js'
 ];
@@ -32,7 +41,7 @@ self.addEventListener('install', (event) => {
       }),
       caches.open(PAGE_CACHE_NAME).then((cache) => {
         console.log('📦 Initializing page cache');
-        return cache.addAll(['/inventory', '/dashboard', '/sales', '/reports']);
+        return cache.addAll(NAVIGATION_ROUTES);
       })
     ])
   );
@@ -61,19 +70,11 @@ async function handleApiRequest(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
-      // Cache successful API responses
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(request, response.clone());
       return response;
     }
     throw new Error('API request failed');
   } catch (error) {
-    // Try to get cached response
-    const cache = await caches.open(CACHE_NAME);
-    const cachedResponse = await cache.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
-    }
+    // For API requests, we don't cache them as they're handled by IndexedDB
     throw error;
   }
 }
@@ -99,22 +100,32 @@ async function handleStaticRequest(request) {
 
 // Helper function to handle navigation requests
 async function handleNavigationRequest(request) {
+  const url = new URL(request.url);
+  const pageCache = await caches.open(PAGE_CACHE_NAME);
+  
   try {
     const response = await fetch(request);
     if (response.ok) {
       // Cache the page for offline use
-      const pageCache = await caches.open(PAGE_CACHE_NAME);
       await pageCache.put(request, response.clone());
       return response;
     }
     throw new Error('Navigation request failed');
   } catch (error) {
     // Try to get cached page
-    const pageCache = await caches.open(PAGE_CACHE_NAME);
     const cachedPage = await pageCache.match(request);
     if (cachedPage) {
       return cachedPage;
     }
+    
+    // If the requested page is in our navigation routes, try to serve it from cache
+    if (NAVIGATION_ROUTES.includes(url.pathname)) {
+      const cachedResponse = await pageCache.match(url.pathname);
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+    }
+    
     return caches.match(OFFLINE_URL);
   }
 }
@@ -138,9 +149,9 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Handle API requests
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(handleApiRequest(request));
+  // Handle API requests - let them pass through to IndexedDB
+  if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase.co')) {
+    event.respondWith(fetch(request));
     return;
   }
 

@@ -24,6 +24,22 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const saleSync = useGlobalSaleSync();
   const productCache = useGlobalProductCache();
 
+  // Register service worker
+  React.useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/sw.js')
+          .then((registration) => {
+            console.log('Service Worker registered with scope:', registration.scope);
+          })
+          .catch((error) => {
+            console.error('Service Worker registration failed:', error);
+          });
+      });
+    }
+  }, []);
+
   // Log when auth is ready and sync should start
   React.useEffect(() => {
     if (!loading && user?.user_metadata?.store_id) {
@@ -74,6 +90,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0ABAB5" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="POS System" />
+        <link rel="apple-touch-icon" href="/next.svg" />
+      </head>
       <body className={inter.className}>
         <AuthProvider>
           <ReactQueryProvider>
