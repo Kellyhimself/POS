@@ -79,59 +79,60 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if ('serviceWorker' in navigator) {
+              if (typeof window !== 'undefined') {
                 window.addEventListener('load', async () => {
-                  try {
-                    // Unregister old service workers to avoid conflicts
-                    const registrations = await navigator.serviceWorker.getRegistrations();
-                    for (let registration of registrations) {
-                      if (registration.scope !== '${window.location.origin}/') {
-                        await registration.unregister();
-                        console.log('Unregistered old service worker:', registration.scope);
-                      }
-                    }
-
-                    // Check if service worker is already registered
-                    const registration = await navigator.serviceWorker.getRegistration('/');
-                    if (registration) {
-                      console.log('ServiceWorker already registered with scope:', registration.scope);
-                      registration.update();
-                      return;
-                    }
-
-                    // Register new service worker
-                    const newRegistration = await navigator.serviceWorker.register('/sw.js', {
-                      scope: '/',
-                      updateViaCache: 'none'
-                    });
-                    console.log('ServiceWorker registration successful with scope:', newRegistration.scope);
-
-                    // Handle updates
-                    newRegistration.addEventListener('updatefound', () => {
-                      const newWorker = newRegistration.installing;
-                      console.log('Service Worker update found!');
-
-                      newWorker.addEventListener('statechange', () => {
-                        console.log('Service Worker state:', newWorker.state);
-                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                          console.log('New Service Worker ready to take over');
-                          // Optionally notify user or reload: window.location.reload();
-                        } else if (newWorker.state === 'redundant') {
-                          console.error('Service Worker became redundant');
+                  if ('serviceWorker' in navigator) {
+                    try {
+                      // Unregister old service workers to avoid conflicts
+                      const registrations = await navigator.serviceWorker.getRegistrations();
+                      for (let registration of registrations) {
+                        if (registration.scope !== window.location.origin + '/') {
+                          await registration.unregister();
+                          console.log('Unregistered old service worker:', registration.scope);
                         }
-                      });
-                    });
+                      }
 
-                    // Log controller changes
-                    navigator.serviceWorker.addEventListener('controllerchange', () => {
-                      console.log('Service Worker controller changed');
-                    });
-                  } catch (error) {
-                    console.error('ServiceWorker registration failed:', error);
+                      // Check if service worker is already registered
+                      const registration = await navigator.serviceWorker.getRegistration('/');
+                      if (registration) {
+                        console.log('ServiceWorker already registered with scope:', registration.scope);
+                        registration.update();
+                        return;
+                      }
+
+                      // Register new service worker
+                      const newRegistration = await navigator.serviceWorker.register('/sw.js', {
+                        scope: '/',
+                        updateViaCache: 'none'
+                      });
+                      console.log('ServiceWorker registration successful with scope:', newRegistration.scope);
+
+                      // Handle updates
+                      newRegistration.addEventListener('updatefound', () => {
+                        const newWorker = newRegistration.installing;
+                        console.log('Service Worker update found!');
+
+                        newWorker.addEventListener('statechange', () => {
+                          console.log('Service Worker state:', newWorker.state);
+                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            console.log('New Service Worker ready to take over');
+                          } else if (newWorker.state === 'redundant') {
+                            console.error('Service Worker became redundant');
+                          }
+                        });
+                      });
+
+                      // Log controller changes
+                      navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        console.log('Service Worker controller changed');
+                      });
+                    } catch (error) {
+                      console.error('ServiceWorker registration failed:', error);
+                    }
+                  } else {
+                    console.log('Service Workers are not supported in this browser');
                   }
                 });
-              } else {
-                console.log('Service Workers are not supported in this browser');
               }
             `
           }}
