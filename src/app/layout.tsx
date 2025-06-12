@@ -34,10 +34,11 @@ async function registerServiceWorker() {
     const existingRegistrations = await navigator.serviceWorker.getRegistrations();
     console.log('📝 Found existing registrations:', existingRegistrations.length);
 
-    // Unregister all existing service workers to ensure clean state
-    for (const registration of existingRegistrations) {
-      await registration.unregister();
-      console.log('🧹 Unregistered existing service worker');
+    // Only unregister if there's an active service worker
+    const activeWorker = existingRegistrations.find(reg => reg.active);
+    if (activeWorker) {
+      console.log('🔄 Found active service worker, skipping registration');
+      return;
     }
 
     // Register new service worker
@@ -54,7 +55,7 @@ async function registerServiceWorker() {
       console.log('🔄 New service worker found:', newWorker?.state);
       
       if (newWorker) {
-        newWorker.addEventListener('statechange', () => {
+        newWorker.addEventListener('statechange', async () => {
           console.log('🔄 Service worker state changed:', newWorker.state);
           
           if (newWorker.state === 'installed') {
@@ -65,6 +66,33 @@ async function registerServiceWorker() {
             } else {
               console.log('🔄 Activating new service worker...');
               newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          } else if (newWorker.state === 'activated') {
+            console.log('✅ Service worker activated, caching critical assets...');
+            try {
+              const cache = await caches.open('critical-assets-v1');
+              const assetsToCache = [
+                '/',
+                '/dashboard',
+                '/login',
+                '/pos',
+                '/reports',
+                '/bulk-operations',
+                '/settings',
+                '/inventory',
+                '/manifest.json',
+                '/icons/icon-192x192.png',
+                '/icons/icon-512x512.png',
+                '/icons/icon-32x32.png',
+                '/icons/icon-16x16.png',
+                '/icons/safari-pinned-tab.svg',
+                '/browserconfig.xml'
+              ];
+              
+              await cache.addAll(assetsToCache);
+              console.log('✅ Critical assets cached successfully');
+            } catch (error) {
+              console.error('❌ Error caching critical assets:', error);
             }
           }
         });
@@ -83,34 +111,6 @@ async function registerServiceWorker() {
         window.location.reload();
       }
     });
-
-    // Cache critical assets immediately
-    console.log('📦 Caching critical assets...');
-    const cache = await caches.open('critical-assets-v1');
-    const assetsToCache = [
-      '/',
-      '/dashboard',
-      '/login',
-      '/pos',
-      '/reports',
-      '/bulk-reports',
-      '/settings',
-      '/inventory',
-      '/manifest.json',
-      '/icons/icon-192x192.png',
-      '/icons/icon-512x512.png',
-      '/icons/icon-32x32.png',
-      '/icons/icon-16x16.png',
-      '/icons/safari-pinned-tab.svg',
-      '/browserconfig.xml'
-    ];
-    
-    try {
-      await cache.addAll(assetsToCache);
-      console.log('✅ Critical assets cached successfully');
-    } catch (error) {
-      console.error('❌ Error caching critical assets:', error);
-    }
 
     // Log service worker state
     console.log('📊 Service Worker State:', {
