@@ -34,11 +34,10 @@ async function registerServiceWorker() {
     const existingRegistrations = await navigator.serviceWorker.getRegistrations();
     console.log('📝 Found existing registrations:', existingRegistrations.length);
 
-    // Only unregister if there's an active service worker
-    const activeWorker = existingRegistrations.find(reg => reg.active);
-    if (activeWorker) {
-      console.log('🔄 Found active service worker, skipping registration');
-      return;
+    // Unregister all existing service workers to ensure clean state
+    for (const registration of existingRegistrations) {
+      await registration.unregister();
+      console.log('🧹 Unregistered existing service worker');
     }
 
     // Register new service worker
@@ -60,13 +59,10 @@ async function registerServiceWorker() {
           
           if (newWorker.state === 'installed') {
             console.log('📦 Service worker installed, waiting for activation...');
-            if (navigator.serviceWorker.controller) {
-              console.log('🔄 New content available, reloading...');
-              window.location.reload();
-            } else {
-              console.log('🔄 Activating new service worker...');
-              newWorker.postMessage({ type: 'SKIP_WAITING' });
-            }
+            // Force activation by sending skipWaiting message
+            newWorker.postMessage({ type: 'SKIP_WAITING' });
+          } else if (newWorker.state === 'activating') {
+            console.log('🔄 Service worker is activating...');
           } else if (newWorker.state === 'activated') {
             console.log('✅ Service worker activated, caching critical assets...');
             try {
