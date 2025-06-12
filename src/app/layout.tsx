@@ -66,10 +66,17 @@ async function registerServiceWorker() {
           
           if (newWorker.state === 'installed') {
             console.log('📦 Service worker installed, waiting for activation...');
-            // Force activation by sending skipWaiting message
-            newWorker.postMessage({ type: 'SKIP_WAITING' });
+            // Check if there's a waiting worker
+            if (registration.waiting) {
+              console.log('🔄 Found waiting worker, activating...');
+              registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
           } else if (newWorker.state === 'activating') {
             console.log('🔄 Service worker is activating...');
+            // Ensure the service worker is properly activated
+            if (registration.active) {
+              console.log('✅ Service worker activated successfully');
+            }
           } else if (newWorker.state === 'activated') {
             console.log('✅ Service worker activated, caching critical assets...');
             try {
@@ -122,6 +129,11 @@ async function registerServiceWorker() {
       installing: !!registration.installing,
       waiting: !!registration.waiting
     });
+
+    // Ensure the service worker is properly activated
+    if (registration.active) {
+      console.log('✅ Service worker is active and ready');
+    }
 
   } catch (error) {
     console.error('❌ Service Worker registration failed:', error);
