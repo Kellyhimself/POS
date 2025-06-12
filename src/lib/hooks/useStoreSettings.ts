@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase-clients/pages';
 import { useAuth } from '@/components/providers/AuthProvider';
+
+// Create a single instance of the client
+const supabase = createClient();
 
 export interface StoreSettings {
   id: string;
