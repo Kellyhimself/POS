@@ -5,7 +5,6 @@ import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
-import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useGlobalProductCache } from '@/lib/hooks/useGlobalProductCache';
 import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
@@ -15,14 +14,14 @@ import * as React from 'react';
 const inter = Inter({ subsets: ['latin'] });
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
+
   const pathname = usePathname();
   const { user, loading } = useAuth();
 
   // Initialize hooks at the top level
-  const productSync = useGlobalProductSync();
-  const saleSync = useGlobalSaleSync();
-  const productCache = useGlobalProductCache();
+  useGlobalProductSync();
+  useGlobalSaleSync();
+  useGlobalProductCache();
 
   // Register service worker
   React.useEffect(() => {
