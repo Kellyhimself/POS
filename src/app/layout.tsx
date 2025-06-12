@@ -34,16 +34,12 @@ async function registerServiceWorker() {
     const existingRegistrations = await navigator.serviceWorker.getRegistrations();
     console.log('📝 Found existing registrations:', existingRegistrations.length);
 
-    // Unregister existing service workers
-    for (const registration of existingRegistrations) {
-      console.log('🗑️ Unregistering existing service worker:', registration.scope);
-      await registration.unregister();
+    // Only unregister if there's an active service worker
+    const hasActiveWorker = existingRegistrations.some(reg => reg.active);
+    if (hasActiveWorker) {
+      console.log('🔄 Found active service worker, skipping registration');
+      return;
     }
-
-    // Clear existing caches
-    const cacheNames = await caches.keys();
-    console.log('🗑️ Clearing existing caches:', cacheNames);
-    await Promise.all(cacheNames.map(name => caches.delete(name)));
 
     // Register new service worker
     console.log('📝 Registering new service worker...');
@@ -61,9 +57,16 @@ async function registerServiceWorker() {
       if (newWorker) {
         newWorker.addEventListener('statechange', () => {
           console.log('🔄 Service worker state changed:', newWorker.state);
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            console.log('🔄 New content available, reloading...');
-            window.location.reload();
+          
+          if (newWorker.state === 'installed') {
+            console.log('📦 Service worker installed, waiting for activation...');
+            if (navigator.serviceWorker.controller) {
+              console.log('🔄 New content available, reloading...');
+              window.location.reload();
+            } else {
+              console.log('🔄 Activating new service worker...');
+              newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
           }
         });
       }
@@ -110,12 +113,6 @@ async function registerServiceWorker() {
       } catch (error) {
         console.error('❌ Error caching critical assets:', error);
       }
-    }
-
-    // Force activation if needed
-    if (registration.waiting) {
-      console.log('🔄 Forcing service worker activation...');
-      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
     }
 
     // Log service worker state
