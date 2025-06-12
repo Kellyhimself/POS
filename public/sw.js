@@ -35,64 +35,73 @@ const API_PATTERNS = [
   /^https:\/\/pos-git-test-kellyhimselfs-projects\.vercel\.app\/api\/.*$/
 ];
 
-self.addEventListener("install", function (event) {
-  console.log("[PWA Builder] Install Event processing");
-
+// Firefox requires this to be at the top level
+self.addEventListener('install', event => {
+  console.log('[Service Worker] Install Event');
+  
+  // Skip waiting to activate immediately
+  self.skipWaiting();
+  
   event.waitUntil(
     Promise.all([
-      caches.open(CACHE).then(function (cache) {
-        console.log("[PWA Builder] Cached offline page during install");
+      caches.open(CACHE).then(cache => {
+        console.log('[Service Worker] Caching app shell');
         return cache.addAll(precacheFiles);
       }),
-      caches.open(STATIC_CACHE).then(function (cache) {
-        console.log("[PWA Builder] Cached static assets during install");
+      caches.open(STATIC_CACHE).then(cache => {
+        console.log('[Service Worker] Caching static assets');
         return cache.addAll(STATIC_ASSETS);
       })
-    ])
+    ]).catch(error => {
+      console.error('[Service Worker] Cache failed:', error);
+    })
   );
 });
 
-// Allow sw to control of current page
-self.addEventListener("activate", function (event) {
-  console.log("[PWA Builder] Claiming clients for current page");
+self.addEventListener('activate', event => {
+  console.log('[Service Worker] Activate Event');
+  
+  // Claim clients immediately
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
       // Clean up old caches
-      caches.keys().then(function (cacheNames) {
+      caches.keys().then(cacheNames => {
         return Promise.all(
-          cacheNames.map(function (cacheName) {
+          cacheNames.map(cacheName => {
             if (cacheName !== CACHE && cacheName !== STATIC_CACHE && cacheName !== API_CACHE) {
-              console.log("[PWA Builder] Deleting old cache:", cacheName);
+              console.log('[Service Worker] Deleting old cache:', cacheName);
               return caches.delete(cacheName);
             }
           })
         );
       })
-    ])
+    ]).catch(error => {
+      console.error('[Service Worker] Activation failed:', error);
+    })
   );
 });
 
-// Handle fetch events
-self.addEventListener("fetch", function (event) {
-  if (event.request.method !== "GET") return;
-
+self.addEventListener('fetch', event => {
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') return;
+  
   const url = new URL(event.request.url);
-
-  // Check if it's an API request
+  
+  // Skip cross-origin requests that aren't in our API patterns
+  if (!url.origin.includes(location.origin) && 
+      !API_PATTERNS.some(pattern => pattern.test(url.href))) {
+    return;
+  }
+  
+  // Handle different types of requests
   if (API_PATTERNS.some(pattern => pattern.test(url.href))) {
     event.respondWith(handleApiRequest(event.request));
-    return;
-  }
-
-  // Check if it's a static asset
-  if (STATIC_ASSETS.some(asset => url.pathname.startsWith(asset))) {
+  } else if (STATIC_ASSETS.some(asset => url.pathname.startsWith(asset))) {
     event.respondWith(handleStaticRequest(event.request));
-    return;
+  } else {
+    event.respondWith(handleDefaultRequest(event.request));
   }
-
-  // Default to network-first for other requests
-  event.respondWith(handleDefaultRequest(event.request));
 });
 
 async function handleApiRequest(request) {
@@ -103,7 +112,7 @@ async function handleApiRequest(request) {
     await cache.put(request, response.clone());
     return response;
   } catch (error) {
-    // Fall back to cache
+    console.log('[Service Worker] Network request failed, trying cache:', error);
     const cachedResponse = await fromCache(request, API_CACHE);
     if (cachedResponse) {
       return cachedResponse;
@@ -113,19 +122,20 @@ async function handleApiRequest(request) {
 }
 
 async function handleStaticRequest(request) {
-  // Try cache first
-  const cachedResponse = await fromCache(request, STATIC_CACHE);
-  if (cachedResponse) {
-    return cachedResponse;
-  }
-
-  // Fall back to network
   try {
+    // Try cache first
+    const cachedResponse = await fromCache(request, STATIC_CACHE);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    
+    // Fall back to network
     const response = await fetch(request);
     const cache = await caches.open(STATIC_CACHE);
     await cache.put(request, response.clone());
     return response;
   } catch (error) {
+    console.error('[Service Worker] Static request failed:', error);
     throw error;
   }
 }
@@ -138,7 +148,7 @@ async function handleDefaultRequest(request) {
     await cache.put(request, response.clone());
     return response;
   } catch (error) {
-    // Fall back to cache
+    console.log('[Service Worker] Network request failed, trying cache:', error);
     const cachedResponse = await fromCache(request, CACHE);
     if (cachedResponse) {
       return cachedResponse;
@@ -148,10 +158,15 @@ async function handleDefaultRequest(request) {
 }
 
 async function fromCache(request, cacheName) {
-  const cache = await caches.open(cacheName);
-  const matching = await cache.match(request);
-  if (!matching || matching.status === 404) {
+  try {
+    const cache = await caches.open(cacheName);
+    const matching = await cache.match(request);
+    if (!matching || matching.status === 404) {
+      return null;
+    }
+    return matching;
+  } catch (error) {
+    console.error('[Service Worker] Cache retrieval failed:', error);
     return null;
   }
-  return matching;
 }

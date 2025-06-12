@@ -84,13 +84,39 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(function(registration) {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                  }).catch(function(error) {
-                    console.log('ServiceWorker registration failed: ', error);
-                  });
+                window.addEventListener('load', async function() {
+                  try {
+                    // Check if service worker is already registered
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    
+                    if (registration) {
+                      console.log('ServiceWorker already registered with scope:', registration.scope);
+                      return;
+                    }
+
+                    // Register new service worker
+                    const newRegistration = await navigator.serviceWorker.register('/sw.js', {
+                      scope: '/',
+                      updateViaCache: 'none'
+                    });
+                    
+                    console.log('ServiceWorker registration successful with scope:', newRegistration.scope);
+                    
+                    // Handle updates
+                    newRegistration.addEventListener('updatefound', () => {
+                      const newWorker = newRegistration.installing;
+                      console.log('Service Worker update found!');
+                      
+                      newWorker.addEventListener('statechange', () => {
+                        console.log('Service Worker state:', newWorker.state);
+                      });
+                    });
+                  } catch (error) {
+                    console.error('ServiceWorker registration failed:', error);
+                  }
                 });
+              } else {
+                console.log('Service Workers are not supported in this browser');
               }
             `,
           }}
