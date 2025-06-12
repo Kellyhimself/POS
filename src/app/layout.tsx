@@ -15,13 +15,22 @@ import * as React from 'react';
 const inter = Inter({ subsets: ['latin'] });
 
 // Service worker registration function
+let isRegistering = false;
+
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || process.env.NODE_ENV !== 'production') {
     console.log('⚠️ Service Worker not supported or not in production');
     return;
   }
 
+  // Prevent multiple simultaneous registrations
+  if (isRegistering) {
+    console.log('⏳ Service worker registration already in progress...');
+    return;
+  }
+
   try {
+    isRegistering = true;
     console.log('🔄 Starting service worker registration process...');
 
     // Wait for the page to be fully loaded
@@ -116,12 +125,15 @@ async function registerServiceWorker() {
 
   } catch (error) {
     console.error('❌ Service Worker registration failed:', error);
+  } finally {
+    isRegistering = false;
   }
 }
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading } = useAuth();
+  const [hasRegistered, setHasRegistered] = React.useState(false);
 
   // Initialize hooks at the top level
   useGlobalProductSync();
@@ -130,10 +142,11 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
 
   // Register service worker only after auth is ready and user is logged in
   React.useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && !hasRegistered) {
       registerServiceWorker();
+      setHasRegistered(true);
     }
-  }, [loading, user]);
+  }, [loading, user, hasRegistered]);
 
   // Log when auth is ready and sync should start
   React.useEffect(() => {
