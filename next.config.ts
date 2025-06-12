@@ -20,6 +20,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 4,
           maxAgeSeconds: 365 * 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -31,6 +34,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 4,
           maxAgeSeconds: 7 * 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -42,6 +48,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 64,
           maxAgeSeconds: 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -53,6 +62,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 32,
           maxAgeSeconds: 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -64,6 +76,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 32,
           maxAgeSeconds: 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -76,6 +91,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 100,
           maxAgeSeconds: 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -88,6 +106,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 100,
           maxAgeSeconds: 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -100,6 +121,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 100,
           maxAgeSeconds: 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     },
@@ -112,6 +136,9 @@ const withPWA = nextPWA({
         expiration: {
           maxEntries: 100,
           maxAgeSeconds: 24 * 60 * 60
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
         }
       }
     }
