@@ -5,7 +5,7 @@ import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useGlobalProductCache } from '@/lib/hooks/useGlobalProductCache';
 import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
@@ -15,7 +15,6 @@ import * as React from 'react';
 const inter = Inter({ subsets: ['latin'] });
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
-
   const pathname = usePathname();
   const { user, loading } = useAuth();
 
@@ -175,40 +174,6 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  React.useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      console.log('🔧 Service Worker supported');
-      
-      // Check if service worker is already registered
-      navigator.serviceWorker.getRegistrations().then(registrations => {
-        console.log('📝 Current service worker registrations:', registrations.length);
-        registrations.forEach(reg => {
-          console.log('🔍 Service Worker:', {
-            scope: reg.scope,
-            state: reg.active ? 'active' : 'inactive'
-          });
-        });
-      });
-
-      // Listen for service worker registration
-      navigator.serviceWorker.register('/sw.js').then(
-        registration => {
-          console.log('✅ Service Worker registered successfully:', registration.scope);
-        },
-        error => {
-          console.error('❌ Service Worker registration failed:', error);
-        }
-      );
-
-      // Listen for service worker updates
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        console.log('🔄 Service Worker controller changed');
-      });
-    } else {
-      console.log('⚠️ Service Worker not supported');
-    }
-  }, []);
-
   return (
     <html lang="en">
       <head>
