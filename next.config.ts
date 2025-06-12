@@ -142,7 +142,12 @@ const withPWA = nextPWA({
         }
       }
     }
-  ]
+  ],
+  // Add these options to improve service worker behavior
+  reloadOnOnline: true,
+  clientsClaim: true,
+  cleanupOutdatedCaches: true,
+  sourcemap: true
 });
 
 const nextConfig: NextConfig = {

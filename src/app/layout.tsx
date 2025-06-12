@@ -34,18 +34,17 @@ async function registerServiceWorker() {
     const existingRegistrations = await navigator.serviceWorker.getRegistrations();
     console.log('📝 Found existing registrations:', existingRegistrations.length);
 
-    // Only unregister if there's an active service worker
-    const hasActiveWorker = existingRegistrations.some(reg => reg.active);
-    if (hasActiveWorker) {
-      console.log('🔄 Found active service worker, skipping registration');
-      return;
+    // Unregister all existing service workers to ensure clean state
+    for (const registration of existingRegistrations) {
+      await registration.unregister();
+      console.log('🧹 Unregistered existing service worker');
     }
 
     // Register new service worker
     console.log('📝 Registering new service worker...');
     const registration = await navigator.serviceWorker.register('/sw.js', {
       scope: '/',
-      updateViaCache: 'none'
+      updateViaCache: 'imports'
     });
     console.log('✅ Service Worker registered successfully:', registration.scope);
 
@@ -85,34 +84,32 @@ async function registerServiceWorker() {
       }
     });
 
-    // Cache critical assets
-    if (registration.active) {
-      console.log('📦 Caching critical assets...');
-      const cache = await caches.open('critical-assets-v1');
-      const assetsToCache = [
-        '/',
-        '/dashboard',
-        '/login',
-        '/pos',
-        '/reports',
-        '/bulk-reports',
-        '/settings',
-        '/inventory',
-        '/manifest.json',
-        '/icons/icon-192x192.png',
-        '/icons/icon-512x512.png',
-        '/icons/icon-32x32.png',
-        '/icons/icon-16x16.png',
-        '/icons/safari-pinned-tab.svg',
-        '/browserconfig.xml'
-      ];
-      
-      try {
-        await cache.addAll(assetsToCache);
-        console.log('✅ Critical assets cached successfully');
-      } catch (error) {
-        console.error('❌ Error caching critical assets:', error);
-      }
+    // Cache critical assets immediately
+    console.log('📦 Caching critical assets...');
+    const cache = await caches.open('critical-assets-v1');
+    const assetsToCache = [
+      '/',
+      '/dashboard',
+      '/login',
+      '/pos',
+      '/reports',
+      '/bulk-reports',
+      '/settings',
+      '/inventory',
+      '/manifest.json',
+      '/icons/icon-192x192.png',
+      '/icons/icon-512x512.png',
+      '/icons/icon-32x32.png',
+      '/icons/icon-16x16.png',
+      '/icons/safari-pinned-tab.svg',
+      '/browserconfig.xml'
+    ];
+    
+    try {
+      await cache.addAll(assetsToCache);
+      console.log('✅ Critical assets cached successfully');
+    } catch (error) {
+      console.error('❌ Error caching critical assets:', error);
     }
 
     // Log service worker state
