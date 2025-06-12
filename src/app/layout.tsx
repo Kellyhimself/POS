@@ -34,12 +34,15 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
             await new Promise(resolve => window.addEventListener('load', resolve));
           }
 
-          // Check if service worker is already registered
-          const existingRegistration = await navigator.serviceWorker.getRegistration();
-          if (existingRegistration) {
-            console.log('Service Worker already registered with scope:', existingRegistration.scope);
-            return;
+          // Unregister any existing service workers first
+          const existingRegistrations = await navigator.serviceWorker.getRegistrations();
+          for (const registration of existingRegistrations) {
+            await registration.unregister();
           }
+
+          // Clear all caches
+          const cacheNames = await caches.keys();
+          await Promise.all(cacheNames.map(name => caches.delete(name)));
 
           // Register new service worker
           const registration = await navigator.serviceWorker.register('/sw.js', {
@@ -84,6 +87,11 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
               '/icons/icon-192x192.png',
               '/icons/icon-512x512.png'
             ]);
+          }
+
+          // Force the service worker to activate
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
           }
         } catch (error) {
           console.error('Service Worker registration failed:', error);
