@@ -1,4 +1,5 @@
-import type { NextConfig } from 'next';
+import type { NextConfig } from "next";
+// @ts-expect-error - next-pwa doesn't have TypeScript type definitions
 import nextPWA from 'next-pwa';
 
 const withPWA = nextPWA({
@@ -8,124 +9,75 @@ const withPWA = nextPWA({
   scope: '/',
   skipWaiting: true,
   sw: '/sw.js',
-  buildExcludes: [/middleware-manifest.json$/],
-  publicExcludes: ['!robots.txt', '!manifest.json'],
-  // Precache critical assets
-  additionalPrecaching: [
-    '/manifest.json',
-    '/icons/icon-192x192.png',
-    '/',
-  ],
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'google-fonts',
-        expiration: {
-          maxEntries: 4,
-          maxAgeSeconds: 365 * 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        expiration: { maxEntries: 4, maxAgeSeconds: 365 * 24 * 60 * 60 }
+      }
     },
     {
       urlPattern: /\.(?:eot|otf|ttc|ttf|woff|woff2|font.css)$/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'static-font-assets',
-        expiration: {
-          maxEntries: 4,
-          maxAgeSeconds: 7 * 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        expiration: { maxEntries: 4, maxAgeSeconds: 7 * 24 * 60 * 60 }
+      }
     },
     {
       urlPattern: /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'static-image-assets',
-        expiration: {
-          maxEntries: 64,
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        expiration: { maxEntries: 64, maxAgeSeconds: 24 * 60 * 60 }
+      }
     },
     {
       urlPattern: /\.(?:js)$/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'static-js-assets',
-        expiration: {
-          maxEntries: 32,
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        expiration: { maxEntries: 32, maxAgeSeconds: 24 * 60 * 60 }
+      }
     },
     {
       urlPattern: /\.(?:css|less)$/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'static-style-assets',
-        expiration: {
-          maxEntries: 32,
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        expiration: { maxEntries: 32, maxAgeSeconds: 24 * 60 * 60 }
+      }
     },
     {
       urlPattern: /\/api\/.*$/i,
-      handler: 'StaleWhileRevalidate', // Faster cache-first response with background update
+      handler: 'NetworkFirst',
       options: {
         cacheName: 'api-cache',
-        expiration: {
-          maxEntries: 200, // Increased for wholesale app data
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        networkTimeoutSeconds: 10,
+        expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }
+      }
     },
     {
-      urlPattern: /^https:\/\/xugqiojkjvqzqewugldk\.supabase\.co\/.*$/i,
-      handler: 'StaleWhileRevalidate', // Serve cached Supabase data immediately
+      urlPattern: /^https:\/\/.*\.supabase\.co\/.*$/i,
+      handler: 'NetworkFirst',
       options: {
         cacheName: 'supabase-cache',
-        expiration: {
-          maxEntries: 200, // Increased for larger datasets
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        networkTimeoutSeconds: 10,
+        expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }
+      }
     },
     {
-      urlPattern: /^https:\/\/pos\.veylor360\.com\/.*$/i,
-      handler: 'StaleWhileRevalidate',
+      urlPattern: /^https:\/\/.*\.vercel\.app\/.*$/i,
+      handler: 'NetworkFirst',
       options: {
         cacheName: 'app-cache',
-        expiration: {
-          maxEntries: 200,
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
-    },
-    {
-      urlPattern: /^https:\/\/pos-git-test-kellyhimselfs-projects\.vercel\.app\/.*$/i,
-      handler: 'StaleWhileRevalidate',
-      options: {
-        cacheName: 'app-cache',
-        expiration: {
-          maxEntries: 200,
-          maxAgeSeconds: 24 * 60 * 60,
-        },
-        cacheableResponse: { statuses: [0, 200] },
-      },
-    },
-  ],
+        networkTimeoutSeconds: 10,
+        expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }
+      }
+    }
+  ]
 });
 
 const nextConfig: NextConfig = {
@@ -133,15 +85,16 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
     serverActions: {
-      allowedOrigins:
-        process.env.NODE_ENV === 'production'
-          ? ['pos.veylor360.com']
-          : ['localhost:3000', 'pos.veylor360.com', 'pos-git-test-kellyhimselfs-projects.vercel.app'],
-      bodySizeLimit: '2mb',
+      allowedOrigins: ['localhost:3000', 'pos.veylor360.com', 'pos-git-test-kellyhimselfs-projects.vercel.app'],
+      bodySizeLimit: '2mb'
     },
   },
-  eslint: { ignoreDuringBuilds: true },
-  typescript: { ignoreBuildErrors: true },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -149,24 +102,30 @@ const nextConfig: NextConfig = {
         net: false,
         tls: false,
         crypto: false,
-      };
+        stream: false,
+        zlib: false,
+        http: false,
+        https: false,
+        path: false,
+        os: false,
+        'png-js': false,
+        'pdfkit': false,
+      }
     }
-    return config;
+    return config
   },
   async rewrites() {
     return [
       { source: '/icons/:path*', destination: '/icons/:path*' },
       { source: '/manifest.json', destination: '/manifest.json' },
-      { source: '/sw.js', destination: '/sw.js' },
-    ];
+      { source: '/sw.js', destination: '/sw.js' }
+    ]
   },
   async headers() {
     return [
       {
         source: '/icons/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
       {
         source: '/manifest.json',
@@ -182,24 +141,12 @@ const nextConfig: NextConfig = {
         headers: [
           { key: 'Content-Type', value: 'application/javascript' },
           { key: 'Service-Worker-Allowed', value: '/' },
-          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
-          { key: 'Pragma', value: 'no-cache' },
-          { key: 'Expires', value: '0' },
+          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
           { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
         ],
       },
-      {
-        source: '/:path*',
-        headers: [
-          {
-            key: 'Content-Security-Policy',
-            value:
-              "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://ik.imagekit.io; connect-src 'self' https://xugqiojkjvqzqewugldk.supabase.co ws://xugqiojkjvqzqewugldk.supabase.co; frame-src 'none'; object-src 'none';",
-          },
-        ],
-      },
-    ];
+    ]
   },
 };
 
