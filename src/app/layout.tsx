@@ -30,15 +30,18 @@ async function registerServiceWorker() {
       await new Promise(resolve => window.addEventListener('load', resolve));
     }
 
-    // Check existing registrations
-    const existingRegistrations = await navigator.serviceWorker.getRegistrations();
-    console.log('📝 Found existing registrations:', existingRegistrations.length);
+    // Check for existing service worker
+    const existingRegistration = await navigator.serviceWorker.getRegistration();
+    if (existingRegistration?.active) {
+      console.log('✅ Found active service worker, skipping registration');
+      return;
+    }
 
     // Register new service worker
     console.log('📝 Registering new service worker...');
     const registration = await navigator.serviceWorker.register('/sw.js', {
       scope: '/',
-      updateViaCache: 'imports'
+      updateViaCache: 'none'
     });
     console.log('✅ Service Worker registered successfully:', registration.scope);
 
