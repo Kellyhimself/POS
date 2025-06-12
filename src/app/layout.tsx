@@ -4,7 +4,7 @@ import './globals.css';
 import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/components/providers/AuthProvider';
-import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
+import { ReactQueryProvider } from '@/components/providers/ReactQueryProvider';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useGlobalProductCache } from '@/lib/hooks/useGlobalProductCache';
@@ -12,50 +12,143 @@ import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
 import { useGlobalProductSync } from '@/lib/hooks/useGlobalProductSync';
 import * as React from 'react';
 
-const inter = Inter({ subsets: ['latin'] });
+// Structured logging utility
+const logger = {
+  info: (category: string, message: string, data?: any) =>
+    console.debug(`[${new Date().toISOString()}] [${category}] ${message}`, data),
+  error: (category: string, message: string, error?: any) =>
+    console.error(`[${new Date().toISOString()}] [${category}] ${message}`, error),
+};
+
+const inter = Inter({
+  subsets: ['latin'],
+  // Fallback to system fonts if Google Fonts fail
+  fallback: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+});
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading } = useAuth();
 
-  // Initialize hooks at the top level (unchanged)
+  // Initialize hooks
   useGlobalProductSync();
   useGlobalSaleSync();
   useGlobalProductCache();
 
-  // Log when auth is ready and sync should start (unchanged)
+  // Monitor online/offline status
+  const [isOnline, setIsOnline] = React.useState(true);
+
+  React.useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      logger.info('NETWORK', 'App is online');
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      logger.info('NETWORK', 'App is offline');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Log auth and sync readiness
   React.useEffect(() => {
     if (!loading && user?.user_metadata?.store_id) {
-      console.log('🔄 Auth ready for sync', {
+      logger.info('AUTH', 'Auth ready for sync', {
         storeId: user.user_metadata.store_id,
-        isOnline: navigator.onLine
+        isOnline,
       });
     }
-  }, [loading, user]);
+  }, [loading, user, isOnline]);
 
-  // Log app state for debugging (unchanged)
+  // Log app state
   React.useEffect(() => {
-    console.log('App State:', {
+    logger.info('APP', 'State update', {
       user: user ? 'Logged in' : 'Not logged in',
       path: pathname,
       storeId: user?.user_metadata?.store_id,
-      loading
+      loading,
+      isOnline,
     });
-  }, [user, pathname, loading]);
+  }, [user, pathname, loading, isOnline]);
 
   if (loading) {
     return null;
   }
 
-  // Don't show layout for auth pages (unchanged)
+  // Don't show layout for auth pages
   if (pathname === '/login') {
     return <>{children}</>;
+  }
+
+  // Offline fallback UI
+  if (!isOnline && !navigator.serviceWorker.controller) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <h1 className="text-2xl font-bold">Offline Mode</h1>
+        <p>You're offline and no cached data is available. Please check your connection.</p>
+      </div>
+    );
   }
 
   return <>{children}</>;
 }
 
+// Service worker registration (moved to a separate file in production)
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', async () => {
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          logger.info('SW', 'ServiceWorker already registered', { scope: registration.scope });
+          return;
+        }
+
+        const newRegistration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+          updateViaCache: 'none',
+        });
+
+        logger.info('SW', 'ServiceWorker registration successful', { scope: newRegistration.scope });
+
+        // Handle updates
+        newRegistration.addEventListener('updatefound', () => {
+          const newWorker = newRegistration.installing;
+          logger.info('SW', 'Update found');
+
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              logger.info('SW', 'State changed', { state: newWorker.state });
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                logger.info('SW', 'New version available');
+                // Notify user of update (e.g., via Toaster)
+                // toast('New app version available! Refresh to update.');
+              }
+            });
+          }
+        });
+      } catch (error) {
+        logger.error('SW', 'ServiceWorker registration failed', error);
+      }
+    });
+  } else {
+    logger.info('SW', 'Service Workers not supported');
+  }
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Register service worker on mount
+  React.useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
   return (
     <html lang="en">
       <head>
@@ -76,67 +169,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#0ABAB5" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if (typeof window !== 'undefined') {
-                window.addEventListener('load', async () => {
-                  if ('serviceWorker' in navigator) {
-                    try {
-                      // Unregister old service workers to avoid conflicts
-                      const registrations = await navigator.serviceWorker.getRegistrations();
-                      for (let registration of registrations) {
-                        if (registration.scope !== window.location.origin + '/') {
-                          await registration.unregister();
-                          console.log('Unregistered old service worker:', registration.scope);
-                        }
-                      }
-
-                      // Check if service worker is already registered
-                      const registration = await navigator.serviceWorker.getRegistration('/');
-                      if (registration) {
-                        console.log('ServiceWorker already registered with scope:', registration.scope);
-                        registration.update();
-                        return;
-                      }
-
-                      // Register new service worker
-                      const newRegistration = await navigator.serviceWorker.register('/sw.js', {
-                        scope: '/',
-                        updateViaCache: 'none'
-                      });
-                      console.log('ServiceWorker registration successful with scope:', newRegistration.scope);
-
-                      // Handle updates
-                      newRegistration.addEventListener('updatefound', () => {
-                        const newWorker = newRegistration.installing;
-                        console.log('Service Worker update found!');
-
-                        newWorker.addEventListener('statechange', () => {
-                          console.log('Service Worker state:', newWorker.state);
-                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            console.log('New Service Worker ready to take over');
-                          } else if (newWorker.state === 'redundant') {
-                            console.error('Service Worker became redundant');
-                          }
-                        });
-                      });
-
-                      // Log controller changes
-                      navigator.serviceWorker.addEventListener('controllerchange', () => {
-                        console.log('Service Worker controller changed');
-                      });
-                    } catch (error) {
-                      console.error('ServiceWorker registration failed:', error);
-                    }
-                  } else {
-                    console.log('Service Workers are not supported in this browser');
-                  }
-                });
-              }
-            `
-          }}
-        />
       </head>
       <body className={inter.className}>
         <AuthProvider>
