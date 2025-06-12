@@ -34,12 +34,6 @@ async function registerServiceWorker() {
     const existingRegistrations = await navigator.serviceWorker.getRegistrations();
     console.log('📝 Found existing registrations:', existingRegistrations.length);
 
-    // Unregister all existing service workers to ensure clean state
-    for (const registration of existingRegistrations) {
-      await registration.unregister();
-      console.log('🧹 Unregistered existing service worker');
-    }
-
     // Register new service worker
     console.log('📝 Registering new service worker...');
     const registration = await navigator.serviceWorker.register('/sw.js', {
