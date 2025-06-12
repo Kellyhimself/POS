@@ -30,21 +30,12 @@ async function registerServiceWorker() {
       await new Promise(resolve => window.addEventListener('load', resolve));
     }
 
-    // Wait for a short delay to ensure all app initialization is complete
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
     // Check for existing service worker
     const existingRegistration = await navigator.serviceWorker.getRegistration();
     if (existingRegistration?.active) {
-      console.log('✅ Found active service worker, skipping registration');
+      console.log('✅ Found active service worker, checking for updates...');
+      await existingRegistration.update();
       return;
-    }
-
-    // Unregister any existing service workers to start fresh
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    for (const registration of registrations) {
-      await registration.unregister();
-      console.log('🗑️ Unregistered existing service worker');
     }
 
     // Register new service worker
@@ -137,12 +128,12 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   useGlobalSaleSync();
   useGlobalProductCache();
 
-  // Register service worker only after auth is ready
+  // Register service worker only after auth is ready and user is logged in
   React.useEffect(() => {
-    if (!loading) {
+    if (!loading && user) {
       registerServiceWorker();
     }
-  }, [loading]);
+  }, [loading, user]);
 
   // Log when auth is ready and sync should start
   React.useEffect(() => {
