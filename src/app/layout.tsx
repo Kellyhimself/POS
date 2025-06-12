@@ -80,6 +80,21 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#0ABAB5" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(function(registration) {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                  }).catch(function(error) {
+                    console.log('ServiceWorker registration failed: ', error);
+                  });
+                });
+              }
+            `,
+          }}
+        />
       </head>
       <body className={inter.className}>
         <AuthProvider>
