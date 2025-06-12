@@ -5,7 +5,7 @@ import nextPWA from 'next-pwa';
 const withPWA = nextPWA({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
-  register: false,
+  register: true,
   scope: '/',
   skipWaiting: true,
   sw: '/sw.js',
@@ -202,6 +202,14 @@ const nextConfig: NextConfig = {
             key: 'Cache-Control',
             value: 'public, max-age=0, must-revalidate',
           },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
+          },
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
+          },
         ],
       },
       {
@@ -218,6 +226,14 @@ const nextConfig: NextConfig = {
           {
             key: 'Cache-Control',
             value: 'public, max-age=0, must-revalidate',
+          },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
+          },
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
           },
         ],
       },

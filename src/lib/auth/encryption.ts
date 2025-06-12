@@ -90,10 +90,9 @@ export async function validateOfflineCredentials(
 
 // Helper function to hash passwords
 export async function hashPassword(password: string): Promise<string> {
-  // Use a simple but consistent hashing for offline validation
-  // In production, you should use a proper hashing library like bcrypt
   const encoder = new TextEncoder();
   const data = encoder.encode(password);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return btoa(String.fromCharCode(...new UintArray(hashBuffer)));
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return btoa(String.fromCharCode.apply(null, hashArray));
 } 

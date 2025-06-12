@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import Link from 'next/link';
 import { AuthError } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation';
 import { WifiOff } from 'lucide-react';
 
 export default function LoginPage() {
@@ -12,15 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { signIn, session, isOnline } = useAuth();
-  const router = useRouter();
-
-  // Check if user is already logged in
-  useEffect(() => {
-    if (session) {
-      router.push('/dashboard');
-    }
-  }, [session, router]);
+  const { signIn, isOnline } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,11 +29,7 @@ export default function LoginPage() {
         return;
       }
       
-      if (data?.session) {
-        // Wait a moment to ensure the session is set
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        router.push('/');
-      } else {
+      if (!data?.session) {
         setError('Authentication failed. Please try again.');
       }
     } catch (error) {

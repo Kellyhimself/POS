@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
 import Link from 'next/link';
 
@@ -17,7 +16,6 @@ export default function SignupPage() {
   const [etimsPassword, setEtimsPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const { signUp } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,8 +73,7 @@ export default function SignupPage() {
         throw new Error('Failed to create user account');
       }
 
-      console.log('Signup successful, redirecting...');
-      router.push('/dashboard');
+      console.log('Signup successful');
     } catch (error: unknown) {
       console.error('Signup error:', error);
       // Cleanup: If we created a store but user creation failed, delete the store
