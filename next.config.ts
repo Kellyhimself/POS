@@ -1,13 +1,11 @@
 import type { NextConfig } from "next";
-// @ts-expect-error - next-pwa doesn't have TypeScript type definitions
 import nextPWA from 'next-pwa';
 
 const withPWA = nextPWA({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
-  scope: '/',
-  skipWaiting: true,
+  scope: '/pos/', // Adjusted scope to align with subdomain
   sw: '/sw.js',
   runtimeCaching: [
     {
@@ -69,7 +67,7 @@ const withPWA = nextPWA({
       }
     },
     {
-      urlPattern: /^https:\/\/.*\.vercel\.app\/.*$/i,
+      urlPattern: /^https:\/\/pos\.veylor360\.com\/.*$/i,
       handler: 'NetworkFirst',
       options: {
         cacheName: 'app-cache',
@@ -77,7 +75,13 @@ const withPWA = nextPWA({
         expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }
       }
     }
-  ]
+  ],
+  // Precache critical routes
+  cacheOnFrontEndNav: true,
+  reloadOnOnline: true,
+  fallbacks: {
+    document: '/offline.html', // Fallback for navigation requests
+  },
 });
 
 const nextConfig: NextConfig = {
@@ -116,19 +120,19 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
-      { source: '/icons/:path*', destination: '/icons/:path*' },
-      { source: '/manifest.json', destination: '/manifest.json' },
-      { source: '/sw.js', destination: '/sw.js' }
+      { source: '/pos/icons/:path*', destination: '/icons/:path*' },
+      { source: '/pos/manifest.json', destination: '/manifest.json' },
+      { source: '/pos/sw.js', destination: '/sw.js' }
     ]
   },
   async headers() {
     return [
       {
-        source: '/icons/:path*',
+        source: '/pos/icons/:path*',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
       {
-        source: '/manifest.json',
+        source: '/pos/manifest.json',
         headers: [
           { key: 'Content-Type', value: 'application/manifest+json' },
           { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
@@ -137,10 +141,10 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/sw.js',
+        source: '/pos/sw.js',
         headers: [
           { key: 'Content-Type', value: 'application/javascript' },
-          { key: 'Service-Worker-Allowed', value: '/' },
+          { key: 'Service-Worker-Allowed', value: '/pos/' },
           { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
           { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },

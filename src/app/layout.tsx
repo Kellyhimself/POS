@@ -19,22 +19,19 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading } = useAuth();
 
-  // Initialize hooks
-  useGlobalProductSync();
-  useGlobalSaleSync();
-  useGlobalProductCache();
+  const productSync = useGlobalProductSync();
+  const saleSync = useGlobalSaleSync();
+  const productCache = useGlobalProductCache();
 
-  // Log auth and sync status
   React.useEffect(() => {
     if (!loading && user?.user_metadata?.store_id) {
       console.log('🔍 Auth ready for sync', {
-        storeId: user.user_metadata_store_id,
+        storeId: user.user_metadata.store_id,
         isOnline: navigator.onLine,
       });
     }
   }, [loading, user]);
 
-  // Log app state for debugging
   React.useEffect(() => {
     console.log('📋 App State:', {
       user: user ? 'Logged in' : 'Not logged in',
@@ -45,7 +42,6 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
     });
   }, [user, pathname, loading]);
 
-  // Offline detection
   React.useEffect(() => {
     const handleOnline = () => console.log('🌐 App is online');
     const handleOffline = () => console.log('⚠️ App is offline');
@@ -75,19 +71,35 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Simplified service worker registration
   React.useEffect(() => {
-    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+    if ('serviceWorker' in navigator) {
       const registerSW = async () => {
         try {
-          const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          // Unregister existing service workers in development
+          if (process.env.NODE_ENV === 'development') {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const registration of registrations) {
+              await registration.unregister();
+              console.log('🗑️ Unregistered service worker:', registration.scope);
+            }
+            await caches.keys().then((keys) =>
+              Promise.all(keys.map((key) => caches.delete(key)))
+            );
+            console.log('🗑️ Cleared all caches in development');
+          }
+
+          // Register service worker
+          const registration = await navigator.serviceWorker.register('/sw.js', {
+            scope: '/pos/',
+          });
           console.log('✅ Service Worker registered:', registration.scope);
 
-          // Handle updates
+          // Log state changes for debugging
           registration.addEventListener('updatefound', () => {
             const newWorker = registration.installing;
             if (newWorker) {
               newWorker.addEventListener('statechange', () => {
+                console.log('🔄 Service Worker state:', newWorker.state);
                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                   console.log('🔄 New service worker installed, reloading...');
                   window.location.reload();
@@ -100,7 +112,11 @@ export default function RootLayout({
         }
       };
 
-      registerSW();
+      if (process.env.NODE_ENV === 'production') {
+        registerSW();
+      }
+    } else {
+      console.log('⚠️ Service Worker not supported');
     }
   }, []);
 
@@ -119,7 +135,7 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#0ABAB5" />
         <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href="/pos/manifest.json" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
