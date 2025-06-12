@@ -12,7 +12,7 @@ import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
 import { useGlobalProductSync } from '@/lib/hooks/useGlobalProductSync';
 import * as React from 'react';
 
-const inter = Inter({ subsets: ['latin'] }));
+const inter = Inter({ subsets: ['latin'] });
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -20,9 +20,9 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
 
   // Initialize hooks
-  const productSync = useGlobalProductSync();
-  const saleSync = useGlobalSaleSync();
-  const productCache = useGlobalProductCache();
+  useGlobalProductSync();
+  useGlobalSaleSync();
+  useGlobalProductCache();
 
   // Log auth and sync status
   React.useEffect(() => {
