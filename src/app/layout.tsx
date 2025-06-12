@@ -5,6 +5,7 @@ import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useGlobalProductCache } from '@/lib/hooks/useGlobalProductCache';
 import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
