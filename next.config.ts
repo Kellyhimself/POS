@@ -115,6 +115,26 @@ const withPWA = nextPWA({
         }
       }
     }
+  ],
+  headers: [
+    {
+      source: '/sw.js',
+      headers: [
+        {
+          key: 'Service-Worker-Allowed',
+          value: '/'
+        }
+      ]
+    },
+    {
+      source: '/manifest.json',
+      headers: [
+        {
+          key: 'Content-Type',
+          value: 'application/manifest+json'
+        }
+      ]
+    }
   ]
 });
 

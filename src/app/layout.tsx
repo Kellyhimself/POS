@@ -119,15 +119,52 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  React.useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      console.log('🔧 Service Worker supported');
+      
+      // Check if service worker is already registered
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        console.log('📝 Current service worker registrations:', registrations.length);
+        registrations.forEach(reg => {
+          console.log('🔍 Service Worker:', {
+            scope: reg.scope,
+            state: reg.active ? 'active' : 'inactive'
+          });
+        });
+      });
+
+      // Listen for service worker registration
+      navigator.serviceWorker.register('/sw.js').then(
+        registration => {
+          console.log('✅ Service Worker registered successfully:', registration.scope);
+        },
+        error => {
+          console.error('❌ Service Worker registration failed:', error);
+        }
+      );
+
+      // Listen for service worker updates
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('🔄 Service Worker controller changed');
+      });
+    } else {
+      console.log('⚠️ Service Worker not supported');
+    }
+  }, []);
+
   return (
     <html lang="en">
       <head>
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0ABAB5" />
+        <meta name="application-name" content="POS System" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="POS System" />
-        <link rel="apple-touch-icon" href="/next.svg" />
+        <meta name="apple-mobile-web-app-title" content="POS" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#0ABAB5" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
       </head>
       <body className={inter.className}>
         <AuthProvider>
