@@ -14,151 +14,14 @@ import * as React from 'react';
 
 const inter = Inter({ subsets: ['latin'] });
 
-// Service worker registration function
-let isRegistering = false;
-
-async function registerServiceWorker() {
-  if (!('serviceWorker' in navigator) || process.env.NODE_ENV !== 'production') {
-    console.log('⚠️ Service Worker not supported or not in production');
-    return;
-  }
-
-  // Prevent multiple simultaneous registrations
-  if (isRegistering) {
-    console.log('⏳ Service worker registration already in progress...');
-    return;
-  }
-
-  try {
-    isRegistering = true;
-    console.log('🔄 Starting service worker registration process...');
-
-    // Wait for the page to be fully loaded
-    if (document.readyState !== 'complete') {
-      console.log('⏳ Waiting for page to load completely...');
-      await new Promise(resolve => window.addEventListener('load', resolve));
-    }
-
-    // Check for existing service worker
-    const existingRegistration = await navigator.serviceWorker.getRegistration();
-    if (existingRegistration?.active) {
-      console.log('✅ Found active service worker, checking for updates...');
-      await existingRegistration.update();
-      return;
-    }
-
-    // Register new service worker
-    console.log('📝 Registering new service worker...');
-    const registration = await navigator.serviceWorker.register('/sw.js', {
-      scope: '/',
-      updateViaCache: 'none'
-    });
-    console.log('✅ Service Worker registered successfully:', registration.scope);
-
-    // Set up update handling
-    registration.addEventListener('updatefound', () => {
-      const newWorker = registration.installing;
-      console.log('🔄 New service worker found:', newWorker?.state);
-      
-      if (newWorker) {
-        newWorker.addEventListener('statechange', async () => {
-          console.log('🔄 Service worker state changed:', newWorker.state);
-          
-          if (newWorker.state === 'installed') {
-            console.log('📦 Service worker installed, waiting for activation...');
-            // Check if there's a waiting worker
-            if (registration.waiting) {
-              console.log('🔄 Found waiting worker, activating...');
-              registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-            }
-          } else if (newWorker.state === 'activating') {
-            console.log('🔄 Service worker is activating...');
-            // Ensure the service worker is properly activated
-            if (registration.active) {
-              console.log('✅ Service worker activated successfully');
-            }
-          } else if (newWorker.state === 'activated') {
-            console.log('✅ Service worker activated, caching critical assets...');
-            try {
-              const cache = await caches.open('critical-assets-v1');
-              const assetsToCache = [
-                '/',
-                '/dashboard',
-                '/login',
-                '/pos',
-                '/reports',
-                '/bulk-operations',
-                '/settings',
-                '/inventory',
-                '/manifest.json',
-                '/icons/icon-192x192.png',
-                '/icons/icon-512x512.png',
-                '/icons/icon-32x32.png',
-                '/icons/icon-16x16.png',
-                '/icons/safari-pinned-tab.svg',
-                '/browserconfig.xml'
-              ];
-              
-              await cache.addAll(assetsToCache);
-              console.log('✅ Critical assets cached successfully');
-            } catch (error) {
-              console.error('❌ Error caching critical assets:', error);
-            }
-          }
-        });
-      }
-    });
-
-    // Handle service worker errors
-    registration.addEventListener('error', (error) => {
-      console.error('❌ Service Worker registration error:', error);
-    });
-
-    // Handle service worker messages
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      console.log('📨 Service worker message received:', event.data);
-      if (event.data && event.data.type === 'SKIP_WAITING') {
-        window.location.reload();
-      }
-    });
-
-    // Log service worker state
-    console.log('📊 Service Worker State:', {
-      controller: !!navigator.serviceWorker.controller,
-      ready: !!registration.active,
-      installing: !!registration.installing,
-      waiting: !!registration.waiting
-    });
-
-    // Ensure the service worker is properly activated
-    if (registration.active) {
-      console.log('✅ Service worker is active and ready');
-    }
-
-  } catch (error) {
-    console.error('❌ Service Worker registration failed:', error);
-  } finally {
-    isRegistering = false;
-  }
-}
-
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading } = useAuth();
-  const [hasRegistered, setHasRegistered] = React.useState(false);
 
   // Initialize hooks at the top level
   useGlobalProductSync();
   useGlobalSaleSync();
   useGlobalProductCache();
-
-  // Register service worker only after auth is ready and user is logged in
-  React.useEffect(() => {
-    if (!loading && user && !hasRegistered) {
-      registerServiceWorker();
-      setHasRegistered(true);
-    }
-  }, [loading, user, hasRegistered]);
 
   // Log when auth is ready and sync should start
   React.useEffect(() => {
@@ -180,7 +43,6 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
     });
   }, [user, pathname, loading]);
 
-  // Remove the redirect effect and let middleware handle it
   if (loading) {
     return null;
   }
