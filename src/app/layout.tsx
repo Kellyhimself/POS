@@ -72,6 +72,19 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
               window.location.reload();
             }
           });
+
+          // Cache critical assets
+          if (registration.active) {
+            const cache = await caches.open('critical-assets-v1');
+            await cache.addAll([
+              '/',
+              '/dashboard',
+              '/login',
+              '/manifest.json',
+              '/icons/icon-192x192.png',
+              '/icons/icon-512x512.png'
+            ]);
+          }
         } catch (error) {
           console.error('Service Worker registration failed:', error);
         }
