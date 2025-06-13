@@ -165,9 +165,19 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: serve from cache, then network, then offline fallback
+// Modified fetch event to serve the app shell for navigation requests
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Handle navigation requests (e.g., /dashboard, /inventory)
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      caches.match('/').then((response) => {
+        return response || fetch(event.request).catch(() => caches.match(OFFLINE_URL));
+      })
+    );
+    return;
+  }
 
   // Runtime cache for Next.js static assets (JS/CSS chunks, fonts, etc.)
   if (event.request.url.includes('/_next/static/')) {
