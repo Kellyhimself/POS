@@ -165,7 +165,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Modified fetch event to serve the app shell for navigation requests
+// Modified fetch event to serve the app shell for navigation requests and let React handle client-side routing
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
@@ -173,7 +173,11 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       caches.match('/').then((response) => {
-        return response || fetch(event.request).catch(() => caches.match(OFFLINE_URL));
+        if (response) {
+          // Return the cached app shell and let React handle client-side routing
+          return response;
+        }
+        return fetch(event.request).catch(() => caches.match(OFFLINE_URL));
       })
     );
     return;
