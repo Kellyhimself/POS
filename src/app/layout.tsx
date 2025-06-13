@@ -19,9 +19,9 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading } = useAuth();
 
-  const productSync = useGlobalProductSync();
-  const saleSync = useGlobalSaleSync();
-  const productCache = useGlobalProductCache();
+  useGlobalProductSync();
+  useGlobalSaleSync();
+  useGlobalProductCache();
 
   React.useEffect(() => {
     if (!loading && user?.user_metadata?.store_id) {
@@ -72,66 +72,27 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   React.useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      // Only handle development mode cleanup
-      if (process.env.NODE_ENV === 'development') {
-        const cleanupSW = async () => {
-          try {
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            for (const registration of registrations) {
-              await registration.unregister();
-              console.log('🗑️ Unregistered service worker:', registration.scope);
+    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+      navigator.serviceWorker
+        .register('/pos/sw.js', { scope: '/pos/' })
+        .then((registration) => {
+          console.log('✅ Service Worker registered:', registration.scope);
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                console.log('🔄 Service Worker state:', newWorker.state);
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('🔄 New service worker installed, reloading...');
+                  window.location.reload();
+                }
+              });
             }
-            await caches.keys().then((keys) =>
-              Promise.all(keys.map((key) => caches.delete(key)))
-            );
-            console.log('🗑️ Cleared all caches in development');
-          } catch (error) {
-            console.error('❌ Service Worker cleanup failed:', error);
-          }
-        };
-        cleanupSW();
-      }
-
-      // Add service worker lifecycle event listeners
-      const handleServiceWorkerEvents = () => {
-        // Log when a new service worker is installing
-        navigator.serviceWorker.addEventListener('install', (event) => {
-          console.log('📦 next-pwa Service Worker installing...', event);
-        });
-
-        // Log when a service worker is activated
-        navigator.serviceWorker.addEventListener('activate', (event) => {
-          console.log('✅ next-pwa Service Worker activated', event);
-        });
-
-        // Log when a service worker is controlling the page
-        navigator.serviceWorker.addEventListener('controllerchange', (event) => {
-          console.log('🎮 next-pwa Service Worker controlling the page', event);
-        });
-
-        // Log when a service worker receives a message
-        navigator.serviceWorker.addEventListener('message', (event) => {
-          console.log('📨 next-pwa Service Worker message received:', event.data);
-        });
-
-        // Log when a service worker encounters an error
-        navigator.serviceWorker.addEventListener('error', (event) => {
-          console.error('❌ next-pwa Service Worker error:', event);
-        });
-
-        // Log the current service worker state
-        if (navigator.serviceWorker.controller) {
-          console.log('🔍 Current next-pwa Service Worker state:', {
-            controller: navigator.serviceWorker.controller.state,
-            scope: navigator.serviceWorker.controller.scope,
           });
-        }
-      };
-
-      handleServiceWorkerEvents();
-    } else {
-      console.log('⚠️ Service Worker not supported');
+        })
+        .catch((error) => {
+          console.error('❌ Service Worker registration failed:', error);
+        });
     }
   }, []);
 
