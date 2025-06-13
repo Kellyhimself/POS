@@ -74,7 +74,7 @@ export default function RootLayout({
   React.useEffect(() => {
     if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
       navigator.serviceWorker
-        .register('/pos/sw.js', { scope: '/pos/' })
+        .register('/sw.js', { scope: '/' })
         .then((registration) => {
           console.log('✅ Service Worker registered:', registration.scope);
           registration.addEventListener('updatefound', () => {
@@ -111,7 +111,7 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#0ABAB5" />
         <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
-        <link rel="manifest" href="/pos/manifest.json" />
+        <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
