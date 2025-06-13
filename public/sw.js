@@ -13,7 +13,7 @@ const ASSETS_TO_CACHE = [
   // Next.js routes are server-rendered and may not be cacheable as static files.
 ];
 
-// Updated NEXT_STATIC_ASSETS with actual chunk filenames from .next/static/chunks
+// Updated NEXT_STATIC_ASSETS to include missing chunk filenames from error logs
 const NEXT_STATIC_ASSETS = [
   '/_next/static/chunks/main.js',
   '/_next/static/chunks/webpack.js',
@@ -26,7 +26,17 @@ const NEXT_STATIC_ASSETS = [
   '/_next/static/chunks/pages/settings.js',
   '/_next/static/chunks/pages/bulk-operations.js',
   '/_next/static/css/app.css',
-  // Added actual chunk filenames from .next/static/chunks
+  // Added missing chunk filenames from error logs
+  '/_next/static/chunks/webpack-1ccbf55278267827.js',
+  '/_next/static/chunks/4bd1b696-809dc8533c674123.js',
+  '/_next/static/chunks/main-app-d41d56f775a954bb.js',
+  '/_next/static/chunks/1108-5ba73e9f29a5063c.js',
+  '/_next/static/chunks/6671-be7f8f49a8f75bd4.js',
+  '/_next/static/chunks/app/layout-81b4e15978189f07.js',
+  '/_next/static/chunks/app/page-10d169074b71cf3d.js',
+  // Added font preload
+  '/_next/static/media/e4af272ccee01ff0-s.p.woff2',
+  // Existing chunk filenames from .next/static/chunks
   '/_next/static/chunks/[root-of-the-server]__5ccb4ec7._.js',
   '/_next/static/chunks/[root-of-the-server]__7db745e8._.css',
   '/_next/static/chunks/src_app_globals_css_f9ee138c._.single.css',
@@ -108,19 +118,19 @@ const NEXT_STATIC_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     Promise.all([
-      caches.open(CACHE_NAME).then((cache) => {
-        return Promise.all(
-          ASSETS_TO_CACHE.map((url) =>
-            fetch(url)
-              .then((response) => {
-                if (!response.ok) throw new Error(`Request for ${url} failed`);
-                return cache.put(url, response);
-              })
-              .catch((err) => {
-                console.warn('Asset failed to cache:', url, err);
-              })
-          )
-        );
+    caches.open(CACHE_NAME).then((cache) => {
+      return Promise.all(
+        ASSETS_TO_CACHE.map((url) =>
+          fetch(url)
+            .then((response) => {
+              if (!response.ok) throw new Error(`Request for ${url} failed`);
+              return cache.put(url, response);
+            })
+            .catch((err) => {
+              console.warn('Asset failed to cache:', url, err);
+            })
+        )
+      );
       }),
       caches.open(NEXT_STATIC_CACHE).then((cache) => {
         return Promise.all(
