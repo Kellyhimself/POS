@@ -52,7 +52,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  // Runtime cache for Next.js static assets (JS/CSS chunks)
+  // Runtime cache for Next.js static assets (JS/CSS chunks, fonts, etc.)
   if (event.request.url.includes('/_next/static/')) {
     event.respondWith(
       caches.open(NEXT_STATIC_CACHE).then((cache) =>
@@ -64,7 +64,28 @@ self.addEventListener('fetch', (event) => {
               return response;
             })
             .catch(() => {
-              // If not cached and offline, fail gracefully
+              // Always return a valid Response, even if it's an error
+              return new Response('', { status: 503, statusText: 'Service Unavailable' });
+            });
+        })
+      )
+    );
+    return;
+  }
+
+  // Runtime cache for icons, fonts, images, etc.
+  if (event.request.url.includes('/icons/') || event.request.destination === 'image' || event.request.destination === 'font') {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+          return fetch(event.request)
+            .then((response) => {
+              cache.put(event.request, response.clone());
+              return response;
+            })
+            .catch(() => {
+              return new Response('', { status: 503, statusText: 'Service Unavailable' });
             });
         })
       )
@@ -85,8 +106,10 @@ self.addEventListener('fetch', (event) => {
           if (event.request.mode === 'navigate') {
             // Serve the app shell (/) for all navigation requests
             // This allows the SPA to handle routing and render the correct page using IndexedDB
-            return caches.match('/') || caches.match(OFFLINE_URL);
+            return caches.match('/') || caches.match(OFFLINE_URL) || new Response('', { status: 503, statusText: 'Service Unavailable' });
           }
+          // For all other requests, return a 503 error Response
+          return new Response('', { status: 503, statusText: 'Service Unavailable' });
         });
     })
   );
