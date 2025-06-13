@@ -4,10 +4,7 @@ const OFFLINE_URL = '/offline.html';
 const ASSETS_TO_CACHE = [
   '/',
   '/manifest.json',
-  '/icons/icon-32x32.png',
-  '/icons/icon-16x16.png',
   '/icons/icon-192x192.png',
-  '/icons/icon-144x144.png',
   '/icons/icon-512x512.png',
   // Only cache static assets and offline fallback
   OFFLINE_URL
