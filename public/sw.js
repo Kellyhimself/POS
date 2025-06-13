@@ -1,4 +1,5 @@
 const CACHE_NAME = 'pos-app-cache-v1';
+const NEXT_STATIC_CACHE = 'next-static-assets-v1';
 const OFFLINE_URL = '/offline.html';
 
 const ASSETS_TO_CACHE = [
@@ -39,7 +40,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) =>
       Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => name !== CACHE_NAME && name !== NEXT_STATIC_CACHE)
           .map((name) => caches.delete(name))
       )
     )
@@ -50,6 +51,26 @@ self.addEventListener('activate', (event) => {
 // Fetch: serve from cache, then network, then offline fallback
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Runtime cache for Next.js static assets (JS/CSS chunks)
+  if (event.request.url.includes('/_next/static/')) {
+    event.respondWith(
+      caches.open(NEXT_STATIC_CACHE).then((cache) =>
+        cache.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+          return fetch(event.request)
+            .then((response) => {
+              cache.put(event.request, response.clone());
+              return response;
+            })
+            .catch(() => {
+              // If not cached and offline, fail gracefully
+            });
+        })
+      )
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
