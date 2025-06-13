@@ -7,10 +7,14 @@ const ASSETS_TO_CACHE = [
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
-  // Only cache static assets and offline fallback
-  OFFLINE_URL
-  // Do NOT include route URLs like '/pos', '/inventory', etc. here.
-  // Next.js routes are server-rendered and may not be cacheable as static files.
+  '/offline.html',
+  // Add dynamic routes to cache
+  '/dashboard',
+  '/pos',
+  '/inventory',
+  '/reports',
+  '/settings',
+  '/bulk-operations'
 ];
 
 // Updated NEXT_STATIC_ASSETS to include missing chunk filenames from error logs
@@ -165,20 +169,40 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Modified fetch event to serve the app shell for navigation requests and let React handle client-side routing
+// Modified fetch event to handle offline navigation better
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   // Handle navigation requests (e.g., /dashboard, /inventory)
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/').then((response) => {
-        if (response) {
-          // Return the cached app shell and let React handle client-side routing
+      fetch(event.request)
+        .then((response) => {
+          // Cache the successful response
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
           return response;
-        }
-        return fetch(event.request).catch(() => caches.match(OFFLINE_URL));
-      })
+        })
+        .catch(() => {
+          // Try to get the requested URL from cache
+          return caches.match(event.request.url)
+            .then((cachedResponse) => {
+              if (cachedResponse) {
+                return cachedResponse;
+              }
+              // If not in cache, try to get the app shell
+              return caches.match('/')
+                .then((shellResponse) => {
+                  if (shellResponse) {
+                    return shellResponse;
+                  }
+                  // If all else fails, show offline page
+                  return caches.match(OFFLINE_URL);
+                });
+            });
+        })
     );
     return;
   }
@@ -191,12 +215,19 @@ self.addEventListener('fetch', (event) => {
           if (cachedResponse) return cachedResponse;
           return fetch(event.request)
             .then((response) => {
+              if (!response.ok) throw new Error(`Request for ${event.request.url} failed`);
               cache.put(event.request, response.clone());
               return response;
             })
             .catch(() => {
-              // Always return a valid Response, even if it's an error
-              return new Response('', { status: 503, statusText: 'Service Unavailable' });
+              // Return a valid Response for failed requests
+              return new Response('', { 
+                status: 503, 
+                statusText: 'Service Unavailable',
+                headers: new Headers({
+                  'Content-Type': 'text/plain'
+                })
+              });
             });
         })
       )
@@ -205,18 +236,27 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Runtime cache for icons, fonts, images, etc.
-  if (event.request.url.includes('/icons/') || event.request.destination === 'image' || event.request.destination === 'font') {
+  if (event.request.url.includes('/icons/') || 
+      event.request.destination === 'image' || 
+      event.request.destination === 'font') {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
         cache.match(event.request).then((cachedResponse) => {
           if (cachedResponse) return cachedResponse;
           return fetch(event.request)
             .then((response) => {
+              if (!response.ok) throw new Error(`Request for ${event.request.url} failed`);
               cache.put(event.request, response.clone());
               return response;
             })
             .catch(() => {
-              return new Response('', { status: 503, statusText: 'Service Unavailable' });
+              return new Response('', { 
+                status: 503, 
+                statusText: 'Service Unavailable',
+                headers: new Headers({
+                  'Content-Type': 'text/plain'
+                })
+              });
             });
         })
       )
@@ -224,23 +264,33 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Default fetch handler
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
 
       return fetch(event.request)
         .then((response) => {
-          // Optionally cache new requests here
+          // Cache successful responses
+          if (response.ok) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
           return response;
         })
         .catch(() => {
           if (event.request.mode === 'navigate') {
-            // Serve the app shell (/) for all navigation requests
-            // This allows the SPA to handle routing and render the correct page using IndexedDB
-            return caches.match('/') || caches.match(OFFLINE_URL) || new Response('', { status: 503, statusText: 'Service Unavailable' });
+            return caches.match('/') || caches.match(OFFLINE_URL);
           }
-          // For all other requests, return a 503 error Response
-          return new Response('', { status: 503, statusText: 'Service Unavailable' });
+          return new Response('', { 
+            status: 503, 
+            statusText: 'Service Unavailable',
+            headers: new Headers({
+              'Content-Type': 'text/plain'
+            })
+          });
         });
     })
   );
