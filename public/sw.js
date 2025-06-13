@@ -1,5 +1,5 @@
 const CACHE_NAME = 'pos-app-cache-v1';
-const OFFLINE_URL = '/offline.html'; // Optional: create this in /public
+const OFFLINE_URL = '/offline.html';
 
 const ASSETS_TO_CACHE = [
   '/',
@@ -9,21 +9,28 @@ const ASSETS_TO_CACHE = [
   '/icons/icon-192x192.png',
   '/icons/icon-144x144.png',
   '/icons/icon-512x512.png',
-  // Add more static assets as needed
-  OFFLINE_URL,
-  '/pos',
-  '/inventory',
-  '/dashboard',
-  '/settings',
-  '/reports',
-  '/bulk-operations'
+  // Only cache static assets and offline fallback
+  OFFLINE_URL
+  // Do NOT include route URLs like '/pos', '/inventory', etc. here.
+  // Next.js routes are server-rendered and may not be cacheable as static files.
 ];
 
-// Install: cache app shell and assets
+// Install: cache app shell and assets, handle errors gracefully
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return Promise.all(
+        ASSETS_TO_CACHE.map((url) =>
+          fetch(url)
+            .then((response) => {
+              if (!response.ok) throw new Error(`Request for ${url} failed`);
+              return cache.put(url, response);
+            })
+            .catch((err) => {
+              console.warn('Asset failed to cache:', url, err);
+            })
+        )
+      );
     })
   );
   self.skipWaiting();
