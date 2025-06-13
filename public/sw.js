@@ -61,9 +61,10 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => {
-          // If request is for a navigation to a page, show offline fallback
           if (event.request.mode === 'navigate') {
-            return caches.match(OFFLINE_URL);
+            // Serve the app shell (/) for all navigation requests
+            // This allows the SPA to handle routing and render the correct page using IndexedDB
+            return caches.match('/') || caches.match(OFFLINE_URL);
           }
         });
     })
