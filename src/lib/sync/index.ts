@@ -3,7 +3,6 @@ import {
   cacheProducts, 
   getCachedProducts,
   saveOfflineSale,
-  saveOfflineETIMSSubmission,
   processSyncQueue,
   getSalesReport,
   getStockReport,
@@ -13,7 +12,7 @@ import {
   updateOfflineStockQuantity
 } from '@/lib/db/index';
 import { Database } from '@/types/supabase';
-
+import { submitEtimsInvoice, EtimsInvoice } from '@/lib/etims/utils';
 
 interface SaleInput {
   store_id: string;
@@ -97,6 +96,8 @@ export class SyncService {
 
     try {
       console.log('🔄 Starting sync process...');
+      
+      // Sync sales only
       const { pendingTransactions } = await processSyncQueue();
       console.log(`📦 Found ${pendingTransactions.length} pending transactions to sync`);
 
@@ -155,6 +156,7 @@ export class SyncService {
           // Continue with next transaction even if one fails
         }
       }
+
     } catch (error) {
       console.error('❌ Sync failed:', error);
     }
@@ -255,32 +257,16 @@ export class SyncService {
   public async submitToETIMS(submission: {
     store_id: string;
     invoice_number: string;
-    data: any;
+    data: EtimsInvoice;
   }) {
     try {
-      // Save locally first
-      const offlineSubmission = await saveOfflineETIMSSubmission({
-        ...submission,
-        status: 'pending',
-        submitted_at: new Date()
-      });
-
-      // If online, try to submit immediately
-      if (this.isOnline) {
-        const response = await fetch('/api/etims/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(submission)
-        });
-
-        if (!response.ok) throw new Error('eTIMS submission failed');
-        const responseData = await response.json();
-        return responseData;
-      }
-
-      return offlineSubmission;
+      // Use the consolidated submitEtimsInvoice function
+      const { data, error } = await submitEtimsInvoice(submission.data);
+      
+      if (error) throw error;
+      return data;
     } catch (error) {
-      console.error('Error submitting to eTIMS:', error);
+      console.error('Error saving eTIMS submission:', error);
       throw error;
     }
   }
@@ -316,10 +302,8 @@ export class SyncService {
   // Generate reports (works offline)
   public async generateReports(store_id: string, startDate: Date, endDate: Date) {
     try {
-      const [sales, stock, etims] = await Promise.all([
-        getSalesReport(store_id, startDate, endDate),
-        getStockReport(store_id),
-        getETIMSReport(store_id, startDate, endDate)
+      const [sales] = await Promise.all([
+        getSalesReport(store_id, startDate, endDate)
       ]);
 
       // Transform sales data to match the expected format

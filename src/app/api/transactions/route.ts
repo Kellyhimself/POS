@@ -158,18 +158,40 @@ export async function POST(request: Request) {
     // Submit to eTIMS if VAT is applicable
     if (vat_total > 0) {
       try {
+        console.log('📝 Preparing eTIMS submission:', {
+          vat_total,
+          store_id,
+          transaction_id: firstTransactionId
+        });
+
         const invoice = formatEtimsInvoice(transaction, mappedProducts, store_id);
+        console.log('📄 Formatted eTIMS invoice:', {
+          invoice_number: invoice.invoice_number,
+          total_amount: invoice.total_amount,
+          vat_total: invoice.vat_total,
+          items_count: invoice.items.length
+        });
+
         const validationErrors = validateEtimsInvoice(invoice);
+        console.log('🔍 eTIMS validation results:', {
+          has_errors: validationErrors.length > 0,
+          errors: validationErrors
+        });
         
         if (validationErrors.length === 0) {
           const { data: etimsData, error: etimsError } = await submitEtimsInvoice(invoice);
           
           if (etimsError) {
+            console.error('❌ eTIMS submission error:', etimsError);
             etimsResult = { 
               error: etimsError.message || etimsError,
               details: 'Failed to submit invoice to KRA eTIMS'
             };
           } else {
+            console.log('✅ eTIMS submission successful:', {
+              invoice_number: etimsData.invoice_number,
+              status: etimsData.status
+            });
             etimsResult = { 
               success: true,
               data: etimsData,
@@ -177,14 +199,18 @@ export async function POST(request: Request) {
             };
           }
         } else {
+          console.warn('⚠️ eTIMS validation failed:', validationErrors);
           etimsValidationErrors = validationErrors;
         }
       } catch (error) {
+        console.error('❌ Error in eTIMS process:', error);
         etimsResult = { 
           error: error instanceof Error ? error.message : 'Unknown error',
           details: 'Failed to process eTIMS submission'
         };
       }
+    } else {
+      console.log('ℹ️ Skipping eTIMS submission - no VAT applicable');
     }
 
     return NextResponse.json({

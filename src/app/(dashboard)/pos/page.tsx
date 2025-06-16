@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSync } from '@/hooks/useSync';
 import { calculateVAT, formatVatStatus } from '@/lib/vat/utils';
 import { triggerProductSync } from '@/lib/hooks/useGlobalProductSync';
+import { formatEtimsInvoice, submitEtimsInvoice } from '@/lib/etims/utils';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -207,6 +208,13 @@ const POSPage = () => {
       
       const total_amount = subtotal + vatTotal - discountAmount;
 
+      console.log('🔄 Starting payment process:', {
+        store_id: storeId,
+        total_amount,
+        vat_total: vatTotal,
+        product_count: cart.length
+      });
+
       // Process payment based on method
       if (paymentMethod === 'mpesa') {
         if (!phone) throw new Error('Phone number is required for M-Pesa payment');
@@ -248,6 +256,49 @@ const POSPage = () => {
         discount_amount: discountAmount,
         discount_type: discountType
       });
+
+      console.log('✅ Sale saved:', {
+        sale_id: saleResult.id,
+        total_amount: saleResult.total_amount,
+        vat_total: saleResult.vat_total
+      });
+
+      // Format and submit eTIMS invoice if VAT is applicable
+      if (vatTotal > 0) {
+        console.log('📝 Preparing eTIMS invoice for sale:', {
+          sale_id: saleResult.id,
+          vat_total: vatTotal
+        });
+
+        const etimsInvoice = formatEtimsInvoice(saleResult, cart.map(item => ({
+          id: item.product.id,
+          name: item.product.name,
+          quantity: item.quantity,
+          price: item.price,
+          displayPrice: item.displayPrice,
+          vat_amount: item.vat_amount
+        })), storeId);
+
+        console.log('📄 Formatted eTIMS invoice:', {
+          invoice_number: etimsInvoice.invoice_number,
+          total_amount: etimsInvoice.total_amount,
+          vat_total: etimsInvoice.vat_total,
+          items_count: etimsInvoice.items.length
+        });
+
+        const { data: etimsData, error: etimsError } = await submitEtimsInvoice(etimsInvoice);
+        if (etimsError) {
+          console.error('❌ Error saving eTIMS invoice:', etimsError);
+        } else {
+          console.log('✅ eTIMS invoice saved:', {
+            invoice_number: etimsData.invoice_number,
+            status: etimsData.status,
+            synced: etimsData.synced
+          });
+        }
+      } else {
+        console.log('ℹ️ Skipping eTIMS submission - no VAT applicable');
+      }
 
       // Invalidate and refetch products query
       await queryClient.invalidateQueries({ queryKey: ['products', storeId] });
@@ -316,104 +367,157 @@ const POSPage = () => {
     },
   });
 
+  // Add this near where you handle sales
+  const handleSale = async (saleData: any) => {
+    try {
+      console.log('🔄 Starting sale process:', {
+        store_id: saleData.store_id,
+        total_amount: saleData.total_amount,
+        product_count: saleData.products.length
+      });
+
+      // Save sale locally
+      const sale = await saveSale(saleData);
+      console.log('✅ Sale saved locally:', {
+        sale_id: sale.id,
+        timestamp: sale.timestamp
+      });
+
+      // Format and submit eTIMS invoice if VAT is applicable
+      if (saleData.vat_total > 0) {
+        const etimsInvoice = formatEtimsInvoice(sale, saleData.products, storeId);
+        console.log('📝 Preparing eTIMS invoice:', {
+          invoice_number: etimsInvoice.invoice_number,
+          total_amount: etimsInvoice.total_amount,
+          items_count: etimsInvoice.items.length
+        });
+
+        const { data: etimsData, error: etimsError } = await submitEtimsInvoice(etimsInvoice);
+        if (etimsError) {
+          console.error('❌ Error saving eTIMS invoice:', etimsError);
+        } else {
+          console.log('✅ eTIMS invoice saved locally:', {
+            invoice_number: etimsData.invoice_number,
+            status: etimsData.status,
+            synced: etimsData.synced
+          });
+        }
+      } else {
+        console.log('ℹ️ Skipping eTIMS submission - no VAT applicable');
+      }
+
+      return sale;
+    } catch (error) {
+      console.error('❌ Error in sale process:', error);
+      throw error;
+    }
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-gray-100">
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Product Grid - Full width on mobile, flex-1 on desktop */}
-        <div className="flex-1 overflow-y-auto p-2 sm:p-4">
-          <ProductGrid 
-            onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} 
-            shouldRefetch={shouldRefetchProducts}
-          />
-        </div>
-
-        {/* Cart - Full width on mobile, fixed width on desktop */}
-        <div className="w-full lg:w-96 bg-white shadow-lg">
-          <Cart
-            items={cart}
-            onQuantityChange={handleQuantityChange}
-            onRemoveItem={handleRemoveItem}
-            onPaymentMethodChange={setPaymentMethod}
-            onVatToggle={handleVatToggle}
-            vatEnabled={vatEnabled}
-            paymentMethod={paymentMethod}
-            phone={phone}
-            onPhoneChange={setPhone}
-            onCheckout={() => paymentMutation.mutate()}
-            isProcessing={paymentMutation.isPending}
-            discountType={discountType}
-            discountValue={discountValue}
-            onDiscountTypeChange={setDiscountType}
-            onDiscountValueChange={setDiscountValue}
-          />
-        </div>
-      </div>
-
-      <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-        <DialogContent className="w-[95vw] max-w-md p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle>Transaction Complete</DialogTitle>
-            <DialogDescription>
-              Your sale has been completed successfully. Would you like to print or download the receipt?
-            </DialogDescription>
-          </DialogHeader>
-          {receiptData && (
-            <div className="py-4">
-              {paymentMethod === 'cash' && (
-                <div className="mb-4 space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <label htmlFor="cashAmount" className="text-sm font-medium">
-                      Amount Received (KES)
-                    </label>
-                    <input
-                      id="cashAmount"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={cashAmount}
-                      onChange={handleCashAmountChange}
-                      className="w-full sm:w-32 px-2 py-1 border rounded"
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Total Amount:</span>
-                    <span>KES {receiptData.sale.total.toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm font-medium">
-                    <span>Balance:</span>
-                    <span className={calculateBalance() >= 0 ? 'text-green-600' : 'text-red-600'}>
-                      KES {calculateBalance().toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              )}
-              <ReceiptActions 
-                receipt={{
-                  id: receiptData.sale.id,
-                  items: receiptData.sale.products.map(product => ({
-                    name: product.name,
-                    quantity: product.quantity,
-                    price: product.price,
-                    vat_amount: product.vat_amount,
-                    vat_status: product.vat_status,
-                    total: product.total
-                  })),
-                  total: receiptData.sale.total,
-                  vat_total: receiptData.sale.vat_total,
-                  discount_amount: receiptData.sale.discount_amount,
-                  discount_type: receiptData.sale.discount_type,
-                  discount_value: discountValue,
-                  payment_method: receiptData.sale.payment_method,
-                  phone: paymentMethod === 'mpesa' ? phone : undefined,
-                  cash_amount: paymentMethod === 'cash' ? cashAmount : undefined,
-                  balance: paymentMethod === 'cash' ? calculateBalance() : undefined
-                }}
+    <div className="flex h-screen">
+      {/* Main content area - no left margin, will be positioned by the sidebar */}
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex h-full">
+          {/* Container for product grid and cart */}
+          <div className="flex-1 flex">
+            {/* Product Grid - takes up 60% of the space */}
+            <div className="w-[60%] h-full overflow-y-auto">
+              <ProductGrid 
+                onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} 
+                shouldRefetch={shouldRefetchProducts}
               />
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+
+            {/* Cart - takes up 40% of the space */}
+            <div className="w-[40%] h-full border-l border-gray-200 overflow-y-auto">
+              <Cart
+                items={cart}
+                onQuantityChange={handleQuantityChange}
+                onRemoveItem={handleRemoveItem}
+                onPaymentMethodChange={setPaymentMethod}
+                onVatToggle={handleVatToggle}
+                vatEnabled={vatEnabled}
+                paymentMethod={paymentMethod}
+                phone={phone}
+                onPhoneChange={setPhone}
+                onCheckout={() => paymentMutation.mutate()}
+                isProcessing={paymentMutation.isPending}
+                discountType={discountType}
+                discountValue={discountValue}
+                onDiscountTypeChange={setDiscountType}
+                onDiscountValueChange={setDiscountValue}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Receipt Dialog */}
+        <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Transaction Complete</DialogTitle>
+              <DialogDescription>
+                Your sale has been completed successfully. Would you like to print or download the receipt?
+              </DialogDescription>
+            </DialogHeader>
+            {receiptData && (
+              <div className="py-4">
+                {paymentMethod === 'cash' && (
+                  <div className="mb-4 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label htmlFor="cashAmount" className="text-sm font-medium">
+                        Amount Received (KES)
+                      </label>
+                      <input
+                        id="cashAmount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={cashAmount}
+                        onChange={handleCashAmountChange}
+                        className="w-full sm:w-32 px-2 py-1 border rounded"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span>Total Amount:</span>
+                      <span>KES {receiptData.sale.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm font-medium">
+                      <span>Balance:</span>
+                      <span className={calculateBalance() >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        KES {calculateBalance().toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <ReceiptActions 
+                  receipt={{
+                    id: receiptData.sale.id,
+                    items: receiptData.sale.products.map(product => ({
+                      name: product.name,
+                      quantity: product.quantity,
+                      price: product.price,
+                      vat_amount: product.vat_amount,
+                      vat_status: product.vat_status,
+                      total: product.total
+                    })),
+                    total: receiptData.sale.total,
+                    vat_total: receiptData.sale.vat_total,
+                    discount_amount: receiptData.sale.discount_amount,
+                    discount_type: receiptData.sale.discount_type,
+                    discount_value: discountValue,
+                    payment_method: receiptData.sale.payment_method,
+                    phone: paymentMethod === 'mpesa' ? phone : undefined,
+                    cash_amount: paymentMethod === 'cash' ? cashAmount : undefined,
+                    balance: paymentMethod === 'cash' ? calculateBalance() : undefined
+                  }}
+                />
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 };

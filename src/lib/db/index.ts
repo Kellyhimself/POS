@@ -129,11 +129,34 @@ export async function cacheETIMSSubmission(submission: Database['public']['Table
 }
 
 export async function getPendingETIMSSubmissions(storeId: string) {
-  return await db.etims_submissions
-    .where('store_id')
-    .equals(storeId)
-    .and(submission => submission.status === 'pending')
-    .toArray();
+  console.log('🔍 Fetching pending eTIMS submissions from IndexedDB:', { storeId });
+  
+  try {
+    const submissions = await db.etims_submissions
+      .where('store_id')
+      .equals(storeId)
+      .and(submission => submission.status === 'pending')
+      .toArray();
+
+    console.log('📊 Retrieved pending eTIMS submissions:', {
+      count: submissions.length,
+      submissions: submissions.map(s => ({
+        id: s.id,
+        invoice_number: s.invoice_number,
+        store_id: s.store_id,
+        status: s.status,
+        submitted_at: s.submitted_at
+      }))
+    });
+
+    return submissions;
+  } catch (error) {
+    console.error('❌ Error fetching pending eTIMS submissions:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      storeId
+    });
+    throw error;
+  }
 }
 
 export async function updateETIMSSubmissionStatus(id: string, status: string, responseData?: Database['public']['Tables']['etims_submissions']['Row']['response_data'], errorMessage?: string) {
@@ -328,6 +351,13 @@ export async function saveOfflineStockUpdate(update: { product_id: string; store
 }
 
 export async function saveOfflineETIMSSubmission(submission: Omit<Database['public']['Tables']['etims_submissions']['Insert'], 'id' | 'created_at' | 'updated_at' | 'response_data' | 'error_message'>) {
+  console.log('💾 Saving eTIMS submission to IndexedDB:', {
+    invoice_number: submission.invoice_number,
+    store_id: submission.store_id,
+    status: submission.status,
+    data: submission.data
+  });
+
   const offlineSubmission: Database['public']['Tables']['etims_submissions']['Insert'] = {
     id: crypto.randomUUID(),
     created_at: new Date().toISOString(),
@@ -340,8 +370,22 @@ export async function saveOfflineETIMSSubmission(submission: Omit<Database['publ
     updated_at: new Date().toISOString()
   };
   
-  await db.etims_submissions.put(offlineSubmission);
-  return offlineSubmission;
+  try {
+    await db.etims_submissions.put(offlineSubmission);
+    console.log('✅ eTIMS submission saved to IndexedDB:', {
+      id: offlineSubmission.id,
+      invoice_number: offlineSubmission.invoice_number,
+      status: offlineSubmission.status
+    });
+    return offlineSubmission;
+  } catch (error) {
+    console.error('❌ Error saving eTIMS submission to IndexedDB:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      invoice_number: submission.invoice_number,
+      store_id: submission.store_id
+    });
+    throw error;
+  }
 }
 
 export async function processSyncQueue() {

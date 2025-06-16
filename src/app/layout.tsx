@@ -10,6 +10,7 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { useGlobalProductCache } from '@/lib/hooks/useGlobalProductCache';
 import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
 import { useGlobalProductSync } from '@/lib/hooks/useGlobalProductSync';
+import { useGlobalEtimsSync } from '@/lib/hooks/useGlobalEtimsSync';
 import * as React from 'react';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -22,6 +23,7 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   useGlobalProductSync();
   useGlobalSaleSync();
   useGlobalProductCache();
+  //useGlobalEtimsSync();
 
   React.useEffect(() => {
     if (!loading && user?.user_metadata?.store_id) {
@@ -99,14 +101,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="application-name" content="POS System" />
+        <meta name="application-name" content="BMS" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="POS" />
+        <meta name="apple-mobile-web-app-title" content="BMS" />
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="theme-color" content="#0ABAB5" />
-        <meta name="description" content="Point of Sale and Inventory Management System" />
+        <meta name="description" content="Business Management System - Point of Sale and Inventory Management" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
         <meta name="msapplication-TileColor" content="#0ABAB5" />
         <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />

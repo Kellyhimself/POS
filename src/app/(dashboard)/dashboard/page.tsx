@@ -7,17 +7,20 @@ import { syncService } from '@/lib/sync';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Download, TrendingUp, Package, AlertTriangle, RefreshCw, ShoppingCart, Receipt, Settings, BarChart3, DollarSign } from 'lucide-react';
+import { AlertCircle, TrendingUp, Package, AlertTriangle, RefreshCw, ShoppingCart, Receipt, Settings, BarChart3, DollarSign } from 'lucide-react';
 import { useSync } from '@/hooks/useSync';
 import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import SyncManager from '@/components/etims/SyncQRCode';
 
 const DashboardPage = () => {
-  const { storeId, loading, isOnline } = useAuth();
+  const { storeId, loading, isOnline, user } = useAuth();
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isSyncSheetOpen, setIsSyncSheetOpen] = useState(false);
   const { syncStatus: inventorySyncStatus } = useSync(storeId || '');
   const syncStatus = useGlobalSaleSync();
   const router = useRouter();
@@ -226,16 +229,78 @@ const DashboardPage = () => {
             <span className="text-sm font-medium">Reports</span>
           </Button>
 
-          <Button
-            variant="outline"
-            className="h-auto py-6 px-4 flex flex-col items-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border-0 shadow-sm"
-            onClick={() => router.push('/settings')}
-          >
-            <div className="p-2 rounded-lg bg-[#0ABAB5]/10">
-              <Settings className="h-6 w-6 text-[#0ABAB5]" />
-            </div>
-            <span className="text-sm font-medium">Settings</span>
-          </Button>
+          <Sheet open={isSyncSheetOpen} onOpenChange={setIsSyncSheetOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-auto py-6 px-4 flex flex-col items-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border-0 shadow-sm"
+              >
+                <div className="p-2 rounded-lg bg-[#0ABAB5]/10">
+                  <RefreshCw className="h-6 w-6 text-[#0ABAB5]" />
+                </div>
+                <span className="text-sm font-medium">Sync</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent 
+              side="right" 
+              className="w-full sm:w-[800px] sm:max-w-[800px] overflow-y-auto h-screen bg-[#1A1F36] border-l border-[#0ABAB5]/20"
+            >
+              <div className="flex flex-col h-full">
+                <SheetHeader className="px-6 py-4 border-b border-white/10">
+                  <SheetTitle className="text-xl font-semibold text-white">Sync eTIMS Submissions</SheetTitle>
+                </SheetHeader>
+                
+                <div className="flex-1 overflow-y-auto">
+                  <div className="flex flex-col h-full">
+                    {/* Instructions */}
+                    <div className="p-6 border-b border-white/10">
+                      <h3 className="text-lg font-medium text-white mb-4">Sync Process</h3>
+                      <div className="space-y-4 text-gray-300">
+                        <p className="text-sm">
+                          1. Click "Download Submissions" to get a file with pending submissions
+                        </p>
+                        <p className="text-sm">
+                          2. Transfer this file to your online device (phone/tablet)
+                        </p>
+                        <p className="text-sm">
+                          3. On your online device, visit the sync page to process submissions:
+                        </p>
+                        <Button
+                          variant="outline"
+                          className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20"
+                          onClick={() => {
+                            window.open('/sync', '_blank');
+                            setIsSyncSheetOpen(false);
+                          }}
+                        >
+                          Open Sync Page
+                        </Button>
+                        <p className="text-sm">
+                          4. After processing, download the results file
+                        </p>
+                        <p className="text-sm">
+                          5. Return here and click "Upload Results" to update your local submissions
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 p-6">
+                      {user?.user_metadata?.store_id && (
+                        <SyncManager 
+                          storeId={user.user_metadata.store_id}
+                          onResultsUploaded={() => {
+                            // Refresh the page or update the UI as needed
+                            setIsSyncSheetOpen(false);
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
 
         {/* Low Stock Alerts */}

@@ -28,8 +28,7 @@ export default function DashboardLayout({
     storeName: null,
     isOnline: navigator.onLine
   });
-  const [shouldRedirect, setShouldRedirect] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Listen for sidebar state changes
   useEffect(() => {

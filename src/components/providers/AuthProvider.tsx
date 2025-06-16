@@ -308,10 +308,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkUser = async () => {
       setLoading(true);
       try {
-        // First check if we're offline
+        // First check for offline token
+        const offlineContext = getOfflineContext();
+        if (offlineContext) {
+          await handleOfflineUser();
+          return;
+        }
+
+        // If no offline token, proceed with online auth
         if (!navigator.onLine) {
           setIsOnline(false);
-          await handleOfflineUser();
           return;
         }
 
@@ -319,15 +325,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          // Only fall back to offline if we're actually offline
-          if (!navigator.onLine) {
-            await handleOfflineUser();
-          } else {
-            setUser(null);
-            setSession(null);
-            setStoreId(null);
-            setStoreName(null);
-          }
+          setUser(null);
+          setSession(null);
+          setStoreId(null);
+          setStoreName(null);
           return;
         }
 
@@ -371,19 +372,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           syncService.startSync();
           await syncService.initialSync(session.user.user_metadata.store_id);
         } else {
-          // Check for offline context first
-          const offlineContext = getOfflineContext();
-          if (offlineContext) {
-            await handleOfflineUser();
-          } else {
-            setUser(null);
-            setSession(null);
-            setStoreId(null);
-            setStoreName(null);
-          }
+          setUser(null);
+          setSession(null);
+          setStoreId(null);
+          setStoreName(null);
         }
       } catch (error) {
-        // Check for offline context in case of error
+        // If error, try offline mode one last time
         const offlineContext = getOfflineContext();
         if (offlineContext) {
           await handleOfflineUser();

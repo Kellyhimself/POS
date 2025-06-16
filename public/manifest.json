@@ -1,12 +1,30 @@
 {
-  "name": "POS System",
-  "short_name": "POS",
+  "name": "Business Management System",
+  "short_name": "BMS",
   "description": "Point of Sale and Inventory Management System",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0ABAB5",
   "icons": [
+    {
+      "src": "/icons/icon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
@@ -44,5 +62,5 @@
     "client_mode": ["auto", "focus-existing"]
   },
   "handle_links": "preferred",
-  "id": "pos-system"
+  "id": "bms-system"
 }

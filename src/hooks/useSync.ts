@@ -4,6 +4,7 @@ import { Database } from '@/types/supabase';
 import { db, processSyncQueue, saveOfflineProduct, updateOfflineStockQuantity, getSalesReport } from '@/lib/db/index';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { calculateVAT } from '@/lib/vat/utils';
+import { submitEtimsInvoice } from '@/lib/etims/utils';
 
 // Define the structure expected by the createSale RPC
 interface SaleInput {
@@ -119,16 +120,16 @@ export function useSync(store_id: string) {
     }
   };
 
-  const submitToETIMS = async (invoice_number: string, data: Record<string, unknown>) => {
+  const submitToETIMS = async (invoice_number: string, data: EtimsInvoice) => {
     try {
-      const result = await syncService.submitToETIMS({
-        store_id,
-        invoice_number,
-        data
-      });
+      const { data: result, error } = await submitEtimsInvoice(data);
+      
+      if (error) throw error;
+      
       if (isOnline) {
         setLastSynced(new Date());
       }
+      
       return result;
     } catch (error) {
       console.error('Error submitting to eTIMS:', error);

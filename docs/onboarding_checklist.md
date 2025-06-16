@@ -1,6 +1,6 @@
 # Wholesale POS System Onboarding Checklist
 
-This checklist will guide you through the steps required to set up your business on the POS & Inventory System, including KRA eTIMS compliance. Please print and check off each item as you complete it.
+This checklist will guide you through the steps required to set up your business on the BMS & Inventory System, including KRA eTIMS compliance. Please print and check off each item as you complete it.
 
 ---
 
@@ -34,9 +34,9 @@ This checklist will guide you through the steps required to set up your business
 
 ---
 
-## 3. POS System Setup
+## 3. BMS System Setup
 
-- [ ] Go to the POS System signup page
+- [ ] Go to the BMS System signup page
 - [ ] Enter your business details (name, address, contact info)
 - [ ] Enter your KRA PIN and VAT Number (if applicable)
 - [ ] Enter your eTIMS credentials (if VAT-registered):
@@ -67,7 +67,7 @@ This checklist will guide you through the steps required to set up your business
 
 ## 6. Training & Support
 
-- [ ] Train staff on using the POS system (sales, inventory, reporting)
+- [ ] Train staff on using the BMS system (sales, inventory, reporting)
 - [ ] Review how to operate in offline mode (if needed)
 - [ ] Know how to contact support for help: __________________________
 
@@ -80,4 +80,4 @@ This checklist will guide you through the steps required to set up your business
 
 ---
 
-**Keep this checklist for your records. For any questions or support, contact your POS system provider.** 
+**Keep this checklist for your records. For any questions or support, whatsapp us on +254748306871.** 
