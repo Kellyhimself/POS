@@ -2,9 +2,6 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { db } from '@/lib/db';
 import { syncService } from '@/lib/sync';
-import type { Database } from '@/types/supabase';
-
-type Product = Database['public']['Tables']['products']['Row'];
 
 export interface ProductSyncStatus {
   isSyncing: boolean;
@@ -89,6 +86,9 @@ export const triggerProductSync = async () => {
           // Just use the current local quantities
           const productsToSync = pendingProducts.map(product => ({
             ...product,
+            vat_status: typeof product.vat_status === 'string'
+              ? product.vat_status === 'vatable'
+              : !!product.vat_status,
             quantity: product.quantity // Use current local quantity
           }));
 
@@ -104,25 +104,51 @@ export const triggerProductSync = async () => {
           // First, get existing products from Supabase
           const { data: existingProducts, error: fetchError } = await syncService.supabase
             .from('products')
-            .select('id, quantity')
+            .select('id, quantity, sku')
             .in('id', productsToSync.map(p => p.id));
 
           if (fetchError) {
             throw fetchError;
           }
 
+          // Also check for existing SKUs
+          const { data: existingSkus, error: skuError } = await syncService.supabase
+            .from('products')
+            .select('id, sku')
+            .in('sku', productsToSync.map(p => p.sku).filter(Boolean));
+
+          if (skuError) {
+            throw skuError;
+          }
+
           console.log('📥 Existing products in Supabase:', 
             existingProducts?.map(p => ({
               id: p.id,
-              quantity: p.quantity
+              quantity: p.quantity,
+              sku: p.sku
             }))
           );
 
           const existingIds = new Set(existingProducts?.map(p => p.id) || []);
+          const existingSkuMap = new Map(existingSkus?.map(p => [p.sku, p.id]) || []);
           
           // Split products into new and existing
           const newProducts = productsToSync.filter(p => !existingIds.has(p.id));
           const existingProductsToUpdate = productsToSync.filter(p => existingIds.has(p.id));
+
+          // Check for SKU conflicts in new products
+          const skuConflicts = newProducts.filter(p => p.sku && existingSkuMap.has(p.sku));
+          if (skuConflicts.length > 0) {
+            console.error('❌ SKU conflicts found:', 
+              skuConflicts.map(p => ({
+                id: p.id,
+                name: p.name,
+                sku: p.sku,
+                existing_id: existingSkuMap.get(p.sku)
+              }))
+            );
+            throw new Error(`SKU conflicts found for products: ${skuConflicts.map(p => p.name).join(', ')}`);
+          }
 
           // Handle new products
           if (newProducts.length > 0) {
@@ -164,6 +190,34 @@ export const triggerProductSync = async () => {
             console.log('✅ Existing products updated successfully');
           }
           
+          // Prepare products for upsert with all relevant fields
+          const productsUpsert = productsToSync.map(product => ({
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+            category: product.category,
+            store_id: product.store_id,
+            quantity: product.quantity,
+            unit_of_measure: product.unit_of_measure,
+            units_per_pack: product.units_per_pack,
+            retail_price: product.retail_price,
+            wholesale_price: product.wholesale_price,
+            wholesale_threshold: product.wholesale_threshold,
+            cost_price: product.cost_price,
+            vat_status: product.vat_status,
+            parent_product_id: product.parent_product_id,
+            selling_price: product.selling_price,
+            input_vat_amount: product.input_vat_amount,
+          }));
+
+          // Upsert all products (new and updated) to Supabase
+          if (productsUpsert.length > 0) {
+            const { error: upsertError } = await syncService.supabase
+              .from('products')
+              .upsert(productsUpsert, { onConflict: 'id' });
+            if (upsertError) throw upsertError;
+          }
+
           // Mark all products as synced
           await Promise.all(
             pendingProducts.map(product => 
@@ -323,6 +377,9 @@ export function useGlobalProductSync() {
             // Just use the current local quantities
             const productsToSync = pendingProducts.map(product => ({
               ...product,
+              vat_status: typeof product.vat_status === 'string'
+                ? product.vat_status === 'vatable'
+                : !!product.vat_status,
               quantity: product.quantity // Use current local quantity
             }));
 
@@ -338,25 +395,51 @@ export function useGlobalProductSync() {
             // First, get existing products from Supabase
             const { data: existingProducts, error: fetchError } = await syncService.supabase
               .from('products')
-              .select('id, quantity')
+              .select('id, quantity, sku')
               .in('id', productsToSync.map(p => p.id));
 
             if (fetchError) {
               throw fetchError;
             }
 
+            // Also check for existing SKUs
+            const { data: existingSkus, error: skuError } = await syncService.supabase
+              .from('products')
+              .select('id, sku')
+              .in('sku', productsToSync.map(p => p.sku).filter(Boolean));
+
+            if (skuError) {
+              throw skuError;
+            }
+
             console.log('📥 Existing products in Supabase:', 
               existingProducts?.map(p => ({
                 id: p.id,
-                quantity: p.quantity
+                quantity: p.quantity,
+                sku: p.sku
               }))
             );
 
             const existingIds = new Set(existingProducts?.map(p => p.id) || []);
+            const existingSkuMap = new Map(existingSkus?.map(p => [p.sku, p.id]) || []);
             
             // Split products into new and existing
             const newProducts = productsToSync.filter(p => !existingIds.has(p.id));
             const existingProductsToUpdate = productsToSync.filter(p => existingIds.has(p.id));
+
+            // Check for SKU conflicts in new products
+            const skuConflicts = newProducts.filter(p => p.sku && existingSkuMap.has(p.sku));
+            if (skuConflicts.length > 0) {
+              console.error('❌ SKU conflicts found:', 
+                skuConflicts.map(p => ({
+                  id: p.id,
+                  name: p.name,
+                  sku: p.sku,
+                  existing_id: existingSkuMap.get(p.sku)
+                }))
+              );
+              throw new Error(`SKU conflicts found for products: ${skuConflicts.map(p => p.name).join(', ')}`);
+            }
 
             // Handle new products
             if (newProducts.length > 0) {
@@ -398,6 +481,34 @@ export function useGlobalProductSync() {
               console.log('✅ Existing products updated successfully');
             }
             
+            // Prepare products for upsert with all relevant fields
+            const productsUpsert = productsToSync.map(product => ({
+              id: product.id,
+              name: product.name,
+              sku: product.sku,
+              category: product.category,
+              store_id: product.store_id,
+              quantity: product.quantity,
+              unit_of_measure: product.unit_of_measure,
+              units_per_pack: product.units_per_pack,
+              retail_price: product.retail_price,
+              wholesale_price: product.wholesale_price,
+              wholesale_threshold: product.wholesale_threshold,
+              cost_price: product.cost_price,
+              vat_status: product.vat_status,
+              parent_product_id: product.parent_product_id,
+              selling_price: product.selling_price,
+              input_vat_amount: product.input_vat_amount,
+            }));
+
+            // Upsert all products (new and updated) to Supabase
+            if (productsUpsert.length > 0) {
+              const { error: upsertError } = await syncService.supabase
+                .from('products')
+                .upsert(productsUpsert, { onConflict: 'id' });
+              if (upsertError) throw upsertError;
+            }
+
             // Mark all products as synced
             await Promise.all(
               pendingProducts.map(product => 

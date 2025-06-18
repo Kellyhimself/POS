@@ -6,6 +6,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Loader2 } from 'lucide-react';
 import { Database } from '@/types/supabase';
+import { useVatSettings } from '@/hooks/useVatSettings';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -18,13 +19,14 @@ interface CartItem {
   saleMode?: 'retail' | 'wholesale';
 }
 
+type PaymentMethod = 'cash' | 'mobile money' | 'credit';
 interface CartProps {
   items: CartItem[];
   onQuantityChange: (index: number, quantity: number) => void;
   onRemoveItem: (index: number) => void;
   onCheckout: () => void;
-  paymentMethod: 'cash' | 'mpesa';
-  onPaymentMethodChange: (method: 'cash' | 'mpesa') => void;
+  paymentMethod: PaymentMethod;
+  onPaymentMethodChange: (method: PaymentMethod) => void;
   vatEnabled: boolean;
   onVatToggle: (enabled: boolean) => void;
   phone: string;
@@ -53,8 +55,11 @@ export function Cart({
   onDiscountTypeChange,
   onDiscountValueChange,
 }: CartProps) {
-  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const vatTotal = items.reduce((sum, item) => sum + (item.vat_amount * item.quantity), 0);
+  const { calculatePrice } = useVatSettings();
+  
+  const subtotal = items.reduce((sum, item) => {
+    return sum + (item.price * item.quantity);
+  }, 0);
   
   // Calculate discount
   const discountAmount = discountType === 'percentage' 
@@ -63,7 +68,17 @@ export function Cart({
       ? Math.min(discountValue, subtotal) // Ensure discount doesn't exceed subtotal
       : 0;
   
-  const total = subtotal + vatTotal - discountAmount;
+  const total = items.reduce((sum, item) => {
+    const priceWithVat = calculatePrice(item.price, item.product.vat_status ?? false);
+    return sum + (priceWithVat * item.quantity);
+  }, 0) - discountAmount;
+
+  // Calculate VAT total for display
+  const vatTotal = items.reduce((sum, item) => {
+    const priceWithVat = calculatePrice(item.price, item.product.vat_status ?? false);
+    const vatAmount = priceWithVat - item.price;
+    return sum + (vatAmount * item.quantity);
+  }, 0);
 
   return (
     <div className="h-full flex flex-col bg-[#F7F9FC]">
@@ -137,12 +152,10 @@ export function Cart({
             <span className="text-gray-600">Subtotal:</span>
             <span className="font-medium text-gray-900">KES {subtotal.toFixed(2)}</span>
           </div>
-          {vatEnabled && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-600">VAT:</span>
-              <span className="font-medium text-gray-900">KES {vatTotal.toFixed(2)}</span>
-            </div>
-          )}
+          <div className="flex justify-between text-xs">
+            <span className="text-gray-600">VAT:</span>
+            <span className="font-medium text-gray-900">KES {vatTotal.toFixed(2)}</span>
+          </div>
           
           {/* Discount Section */}
           <div className="space-y-2 pt-2 border-t border-gray-200">
@@ -204,28 +217,18 @@ export function Cart({
                 <Label htmlFor="cash" className="text-xs text-gray-700">Cash</Label>
               </div>
               <div className="flex items-center space-x-1">
-                <RadioGroupItem value="mpesa" id="mpesa" className="text-[#0ABAB5] border-[#0ABAB5]" />
-                <Label htmlFor="mpesa" className="text-xs text-gray-700">M-Pesa</Label>
+                <RadioGroupItem value="mobile money" id="mobile-money" className="text-[#0ABAB5] border-[#0ABAB5]" />
+                <Label htmlFor="mobile-money" className="text-xs text-gray-700">Mobile Money</Label>
+              </div>
+              <div className="flex items-center space-x-1">
+                <RadioGroupItem value="credit" id="credit" className="text-[#0ABAB5] border-[#0ABAB5]" />
+                <Label htmlFor="credit" className="text-xs text-gray-700">Credit</Label>
               </div>
             </RadioGroup>
 
-            {paymentMethod === 'mpesa' && (
-              <div className="space-y-1">
-                <Label htmlFor="phone" className="text-xs text-gray-700">Phone Number</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => onPhoneChange(e.target.value)}
-                  placeholder="Enter phone number"
-                  className="h-8 text-sm border-gray-200 focus:ring-[#0ABAB5] focus:border-transparent"
-                />
-              </div>
-            )}
-
             <Button
               onClick={onCheckout}
-              disabled={items.length === 0 || (paymentMethod === 'mpesa' && !phone) || isProcessing}
+              disabled={items.length === 0 || isProcessing}
               className="w-full h-9 text-sm bg-[#0ABAB5] hover:bg-[#0ABAB5]/90 text-white font-medium rounded-lg transition-colors"
             >
               {isProcessing ? (

@@ -5,11 +5,11 @@ import {
   saveOfflineSale,
   processSyncQueue,
   getSalesReport,
-  getStockReport,
-  getETIMSReport,
+  saveOfflineProduct,
   db,
   clearOfflineData,
-  updateOfflineStockQuantity
+  updateOfflineStockQuantity,
+  getAllSalesReport
 } from '@/lib/db/index';
 import { Database } from '@/types/supabase';
 import { submitEtimsInvoice, EtimsInvoice } from '@/lib/etims/utils';
@@ -183,8 +183,7 @@ export class SyncService {
 
       // Always save locally first
       const offlineSale = await saveOfflineSale({
-        ...sale,
-        created_at: timestamp
+        ...sale
       });
 
       // Log the state after saving offline
@@ -210,43 +209,20 @@ export class SyncService {
   // Update stock (works offline)
   public async updateStock(productId: string, localQuantity: number) {
     try {
-      if (this.isOnline) {
-        // Online flow - fetch from Supabase and update
-        const { data: currentProduct, error: fetchError } = await this.supabase
-          .from('products')
-          .select('quantity')
-          .eq('id', productId)
-          .single();
-
-        if (fetchError) throw fetchError;
-
-        const currentQuantity = currentProduct?.quantity || 0;
-        const newQuantity = currentQuantity + localQuantity;
-
-        console.log('📊 Calculating new quantity:', {
-          product_id: productId,
-          current_quantity: currentQuantity,
-          quantity_to_add: localQuantity,
-          new_quantity: newQuantity
-        });
-
-        const { data, error } = await this.supabase
-          .from('products')
-          .update({ quantity: newQuantity })
-          .eq('id', productId)
-          .select()
-          .single();
-
-        if (error) throw error;
-        return data;
-      } else {
-        // Offline flow - use local database
+      // Always update offline first and mark as needing sync
         console.log('📊 Updating stock offline:', {
           product_id: productId,
           quantity: localQuantity
         });
-        return await updateOfflineStockQuantity(productId, localQuantity);
-      }
+      
+      const updatedProduct = await updateOfflineStockQuantity(productId, localQuantity);
+      
+      // Mark the product as needing sync
+      await db.products.update(productId, { 
+        synced: false 
+      });
+      
+      return updatedProduct;
     } catch (error) {
       console.error('Error updating stock:', error);
       throw error;
@@ -316,6 +292,7 @@ export class SyncService {
           vat_amount: sale.vat_amount,
           payment_method: sale.payment_method,
           timestamp: sale.timestamp,
+          sale_mode: sale.sale_mode,
           products: sale.products
         }))
       };
@@ -344,7 +321,7 @@ export class SyncService {
           sku: product.sku,
           category: product.category,
           quantity: product.quantity,
-          low_stock: product.quantity <= (product.low_stock_threshold || 0),
+          low_stock: product.quantity <= 10, // Using constant threshold like in inventory page
           retail_price: product.selling_price,
           wholesale_price: product.wholesale_price,
           wholesale_threshold: product.wholesale_threshold
@@ -366,6 +343,7 @@ export class SyncService {
       selling_price: number;
       vat_status: boolean | null;
       category: string | null;
+      cost_price: number;
     } | null;
   }>> {
     // Set start date to beginning of day and end date to end of day
@@ -384,7 +362,8 @@ export class SyncService {
           sku,
           selling_price,
           vat_status,
-          category
+          category,
+          cost_price
         )
       `)
       .eq('store_id', store_id)
@@ -426,19 +405,9 @@ export class SyncService {
         created_at: timestamp,
         updated_at: timestamp
       };
-
-      if (this.isOnline) {
-        const { data, error } = await this.supabase
-          .rpc('create_product', {
-            p_product: productWithTimestamp
-          });
-
-        if (error) throw error;
-        return data;
-      } else {
-        // Save product offline with timestamp
-        return await saveOfflineProduct(productWithTimestamp);
-      }
+     // Save product offline with timestamp
+      return await saveOfflineProduct(productWithTimestamp);
+      
     } catch (error) {
       console.error('Error creating product:', error);
       throw error;
@@ -541,6 +510,70 @@ export class SyncService {
       console.error('Error getting transaction:', error);
       return { data: null, error };
     }
+  }
+
+  public async createPurchase(
+    purchase: Database['public']['Tables']['purchases']['Row'],
+    items: Database['public']['Tables']['purchase_items']['Row'][]
+  ) {
+    try {
+      // Remove 'synced' property if present
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { synced: _, ...purchaseToSend } = purchase as unknown as { [key: string]: unknown };
+      
+      // Check if supplier_id exists in Supabase, if not set to null to avoid foreign key constraint
+      if (purchaseToSend.supplier_id) {
+        const { data: supplierExists } = await this.supabase
+          .from('suppliers')
+          .select('id')
+          .eq('id', purchaseToSend.supplier_id)
+          .maybeSingle();
+        
+        if (!supplierExists) {
+          console.warn(`⚠️ [SyncService] Supplier ${purchaseToSend.supplier_id} not found in Supabase, setting supplier_id to null`);
+          purchaseToSend.supplier_id = null;
+        }
+      }
+      
+      const { data: purchaseData, error: purchaseError } = await this.supabase
+        .from('purchases')
+        .upsert([purchaseToSend], { onConflict: 'id' });
+      if (purchaseError) {
+        console.error('❌ [SyncService] Error inserting purchase:', purchaseError);
+        throw purchaseError;
+      }
+      // Insert purchase items
+      if (items.length > 0) {
+        const itemsToSend = items.map(item => {
+          if ('synced' in item) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { synced: _, ...rest } = item as { [key: string]: unknown };
+            return rest;
+          }
+          return item;
+        });
+        const { error: itemsError } = await this.supabase
+          .from('purchase_items')
+          .insert(itemsToSend);
+        if (itemsError) {
+          console.error('❌ [SyncService] Error inserting purchase items:', itemsError);
+          throw itemsError;
+        }
+      }
+      // Mark local purchase and items as synced
+      if (purchase.id) {
+        await db.purchases.update(purchase.id, { synced: true });
+        await db.purchase_items.where('purchase_id').equals(purchase.id).modify({ synced: true });
+      }
+      return { data: purchaseData, error: null };
+    } catch (error) {
+      console.error('❌ [SyncService] Error in createPurchase:', error);
+      throw error;
+    }
+  }
+
+  public async getAllSalesReport(store_id: string, startDate: Date, endDate: Date) {
+    return await getAllSalesReport(store_id, startDate, endDate);
   }
 }
 

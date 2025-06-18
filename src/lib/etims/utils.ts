@@ -181,7 +181,9 @@ export const submitEtimsInvoice = async (invoiceData: EtimsInvoice): Promise<{ d
       submitted_at: timestamp,
       created_at: timestamp,
       updated_at: timestamp,
-      error_message: null
+      error_message: null,
+      submission_type: 'output_vat',
+      synced: false
     };
 
     // Save to IndexedDB
@@ -191,7 +193,9 @@ export const submitEtimsInvoice = async (invoiceData: EtimsInvoice): Promise<{ d
       id: offlineSubmission,
       invoice_number: invoiceData.invoice_number,
       status: 'pending',
-      submitted_at: timestamp
+      submitted_at: timestamp,
+      submission_type: 'output_vat',
+      synced: false
     });
 
     return { 
@@ -393,5 +397,86 @@ export const generateDataHash = async (submissions: EtimsSubmission[]): Promise<
   } catch (error) {
     console.error('Error generating data hash:', error);
     throw new Error('Failed to generate data hash');
+  }
+};
+
+export const submitStockUpdateEtimsInvoice = async (
+  store_id: string,
+  product: {
+    id: string;
+    name: string;
+    cost_price: number;
+    quantity: number;
+    vat_status: boolean;
+  },
+  quantity: number,
+  inputVatAmount: number
+): Promise<{ data: EtimsSubmission | null; error: Error | null }> => {
+  console.log('📝 Starting eTIMS stock update invoice:', {
+    store_id,
+    product_id: product.id,
+    product_name: product.name,
+    quantity,
+    input_vat: inputVatAmount
+  });
+
+  try {
+    const timestamp = new Date().toISOString();
+    const invoice_number = `STK-${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Create the eTIMS invoice data
+    const invoiceData: EtimsInvoice = {
+      invoice_number,
+      date: timestamp,
+      customer_name: 'Stock Update',
+      customer_tax_pin: '000000000',
+      store_id,
+      total_amount: product.cost_price * quantity,
+      vat_total: inputVatAmount,
+      items: [{
+        description: product.name,
+        quantity,
+        unit_price: product.cost_price,
+        vat_amount: inputVatAmount
+      }]
+    };
+
+    // Create the submission record
+    const submission: EtimsSubmission = {
+      id: crypto.randomUUID(),
+      invoice_number,
+      store_id,
+      response_data: invoiceData,
+      status: 'pending',
+      submitted_at: timestamp,
+      created_at: timestamp,
+      updated_at: timestamp,
+      error_message: null,
+      submission_type: 'input_vat',
+      synced: false
+    };
+
+    // Save to IndexedDB
+    const offlineSubmission = await db.etims_submissions.add(submission);
+
+    console.log('✅ eTIMS stock update invoice saved to IndexedDB:', {
+      id: offlineSubmission,
+      invoice_number,
+      status: 'pending',
+      submitted_at: timestamp,
+      submission_type: 'input_vat',
+      synced: false
+    });
+
+    return { 
+      data: { ...submission, id: offlineSubmission.toString() },
+      error: null 
+    };
+  } catch (error) {
+    console.error('❌ Error saving eTIMS stock update invoice to IndexedDB:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      product_id: product.id
+    });
+    return { data: null, error: error instanceof Error ? error : new Error('Unknown error') };
   }
 }; 

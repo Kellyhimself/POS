@@ -17,9 +17,9 @@ import { ReceiptActions } from '@/components/receipt/ReceiptActions';
 import { Database } from '@/types/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSync } from '@/hooks/useSync';
-import { calculateVAT, formatVatStatus } from '@/lib/vat/utils';
-import { triggerProductSync } from '@/lib/hooks/useGlobalProductSync';
+import { formatVatStatus } from '@/lib/vat/utils';
 import { formatEtimsInvoice, submitEtimsInvoice } from '@/lib/etims/utils';
+import { useVatSettings } from '@/hooks/useVatSettings';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -79,18 +79,18 @@ interface MpesaResponse {
 }
 
 const POSPage = () => {
-  const { user, storeId, isOnline, userMetadata } = useAuth();
+  const { user, storeId, isOnline } = useAuth();
   const [phone, setPhone] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa'>('cash');
-  const [vatEnabled, setVatEnabled] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa' | 'credit'>('cash');
+  const { isVatEnabled, toggleVat, canToggleVat, calculatePrice, calculateVatAmount } = useVatSettings();
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<TransactionResponse['receipt'] | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [shouldRefetchProducts, setShouldRefetchProducts] = useState(false);
   const [discountType, setDiscountType] = useState<'percentage' | 'cash' | null>(null);
   const [discountValue, setDiscountValue] = useState<number>(0);
-  const { saveSale, updateStock } = useSync(storeId || '');
+  const { saveSale } = useSync(storeId || '');
   const queryClient = useQueryClient();
 
   console.log('POS Page - Auth State:', { user, storeId, isOnline });
@@ -99,9 +99,12 @@ const POSPage = () => {
   const addToCartMutation = useMutation({
     mutationFn: async ({ product, isWholesale }: { product: Product; isWholesale: boolean }) => {
       const minQuantity = isWholesale ? (product.wholesale_threshold || 1) : 1;
-      const price = isWholesale ? (product.wholesale_price ?? 0) : (product.retail_price ?? 0);
-      const vatCalculation = calculateVAT(price, vatEnabled && product.vat_status);
-      const displayPrice = vatCalculation.totalAmount;
+      const basePrice = isWholesale ? (product.wholesale_price ?? 0) : (product.retail_price ?? 0);
+      const isVatable = product.vat_status ?? false;
+      
+      const price = calculatePrice(basePrice, isVatable);
+      const vatAmount = calculateVatAmount(basePrice, isVatable);
+      const displayPrice = price;
 
       const existingIndex = cart.findIndex(
         item => item.product.id === product.id && item.saleMode === (isWholesale ? 'wholesale' : 'retail')
@@ -113,17 +116,16 @@ const POSPage = () => {
           const item = updatedCart[existingIndex];
           const incrementAmount = isWholesale ? (product.wholesale_threshold || 1) : 1;
           item.quantity += incrementAmount;
-          const newVatCalculation = calculateVAT(item.price, vatEnabled && item.product.vat_status);
-          item.vat_amount = newVatCalculation.vatAmount;
-          item.displayPrice = newVatCalculation.totalAmount;
+          item.vat_amount = calculateVatAmount(item.price, item.product.vat_status ?? false);
+          item.displayPrice = calculatePrice(item.price, item.product.vat_status ?? false);
           return updatedCart;
         });
       } else {
         const cartItem: CartItem = {
           product,
           quantity: minQuantity,
-          price,
-          vat_amount: vatCalculation.vatAmount,
+          price: basePrice,
+          vat_amount: vatAmount,
           displayPrice,
           saleMode: isWholesale ? 'wholesale' : 'retail'
         };
@@ -145,9 +147,8 @@ const POSPage = () => {
       }
 
       item.quantity = newQty;
-      const vatCalculation = calculateVAT(item.price, vatEnabled && item.product.vat_status);
-      item.vat_amount = vatCalculation.vatAmount;
-      item.displayPrice = vatCalculation.totalAmount;
+      item.vat_amount = calculateVatAmount(item.price, item.product.vat_status ?? false);
+      item.displayPrice = calculatePrice(item.price, item.product.vat_status ?? false);
       return updatedCart;
     });
   };
@@ -157,16 +158,15 @@ const POSPage = () => {
   };
 
   // Handle VAT toggle
-  const handleVatToggle = (enabled: boolean) => {
-    setVatEnabled(enabled);
-    setCart(cart => cart.map(item => {
-      const vatCalculation = calculateVAT(item.price, enabled && item.product.vat_status);
-      return {
+  const handleVatToggle = () => {
+    if (canToggleVat()) {
+      toggleVat();
+      setCart(cart => cart.map(item => ({
         ...item,
-        vat_amount: vatCalculation.vatAmount,
-        displayPrice: vatCalculation.totalAmount
-      };
-    }));
+        vat_amount: calculateVatAmount(item.price, item.product.vat_status ?? false),
+        displayPrice: calculatePrice(item.price, item.product.vat_status ?? false)
+      })));
+    }
   };
 
   // Calculate balance for cash payments
@@ -197,16 +197,30 @@ const POSPage = () => {
         throw new Error(`The following items do not meet the minimum wholesale quantity: ${itemNames}`);
       }
 
-      const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const vatTotal = cart.reduce((sum, item) => sum + (item.vat_amount * item.quantity), 0);
-      
-      const discountAmount = discountType === 'percentage' 
-        ? (subtotal * (discountValue / 100))
-        : discountType === 'cash' 
+      // Calculate correct subtotal, VAT, and total
+      const subtotal = cart.reduce((sum, item) => {
+        // Always use base price (before VAT)
+        return sum + (item.price * item.quantity);
+      }, 0);
+
+      const vatTotal = cart.reduce((sum, item) => {
+        // Calculate VAT based on the calculated price
+        const priceWithVat = calculatePrice(item.price, item.product.vat_status ?? false);
+        const vatAmount = priceWithVat - item.price;
+        return sum + (vatAmount * item.quantity);
+      }, 0);
+
+      const discountAmount = discountType === 'percentage'
+        ? subtotal * (discountValue / 100)
+        : discountType === 'cash'
           ? Math.min(discountValue, subtotal)
           : 0;
-      
-      const total_amount = subtotal + vatTotal - discountAmount;
+
+      const total_amount = cart.reduce((sum, item) => {
+        // Use calculatePrice which already includes VAT if applicable
+        const priceWithVat = calculatePrice(item.price, item.product.vat_status ?? false);
+        return sum + (priceWithVat * item.quantity);
+      }, 0) - discountAmount;
 
       console.log('🔄 Starting payment process:', {
         store_id: storeId,
@@ -218,7 +232,6 @@ const POSPage = () => {
       // Process payment based on method
       if (paymentMethod === 'mpesa') {
         if (!phone) throw new Error('Phone number is required for M-Pesa payment');
-        
         if (isOnline) {
           const mpesaResponse = await fetch('/api/mpesa', {
             method: 'POST',
@@ -229,11 +242,9 @@ const POSPage = () => {
               store_id: storeId 
             }),
           });
-
           if (!mpesaResponse.ok) {
             throw new Error('M-Pesa payment failed');
           }
-
           const mpesaData: MpesaResponse = await mpesaResponse.json();
           if (!mpesaData.success) {
             throw new Error(mpesaData.responseDescription);
@@ -319,8 +330,8 @@ const POSPage = () => {
         receipt: {
           store: {
             id: storeId,
-            name: userMetadata?.store_name || 'Store',
-            address: userMetadata?.store_address || 'Location'
+            name: user?.user_metadata?.store_name || 'Store',
+            address: user?.user_metadata?.store_address || 'Location'
           },
           sale: {
             id: saleResult.id,
@@ -328,8 +339,8 @@ const POSPage = () => {
             payment_method: saleResult.payment_method,
             subtotal: subtotal,
             vat_total: saleResult.vat_total,
-            discount_amount: discountAmount,
-            discount_type: discountType,
+            ...(discountAmount > 0 && { discount_amount: discountAmount }),
+            ...(discountType && { discount_type: discountType }),
             total: saleResult.total_amount,
             products: cart.map(item => ({
               id: item.product.id,
@@ -367,52 +378,6 @@ const POSPage = () => {
     },
   });
 
-  // Add this near where you handle sales
-  const handleSale = async (saleData: any) => {
-    try {
-      console.log('🔄 Starting sale process:', {
-        store_id: saleData.store_id,
-        total_amount: saleData.total_amount,
-        product_count: saleData.products.length
-      });
-
-      // Save sale locally
-      const sale = await saveSale(saleData);
-      console.log('✅ Sale saved locally:', {
-        sale_id: sale.id,
-        timestamp: sale.timestamp
-      });
-
-      // Format and submit eTIMS invoice if VAT is applicable
-      if (saleData.vat_total > 0) {
-        const etimsInvoice = formatEtimsInvoice(sale, saleData.products, storeId);
-        console.log('📝 Preparing eTIMS invoice:', {
-          invoice_number: etimsInvoice.invoice_number,
-          total_amount: etimsInvoice.total_amount,
-          items_count: etimsInvoice.items.length
-        });
-
-        const { data: etimsData, error: etimsError } = await submitEtimsInvoice(etimsInvoice);
-        if (etimsError) {
-          console.error('❌ Error saving eTIMS invoice:', etimsError);
-        } else {
-          console.log('✅ eTIMS invoice saved locally:', {
-            invoice_number: etimsData.invoice_number,
-            status: etimsData.status,
-            synced: etimsData.synced
-          });
-        }
-      } else {
-        console.log('ℹ️ Skipping eTIMS submission - no VAT applicable');
-      }
-
-      return sale;
-    } catch (error) {
-      console.error('❌ Error in sale process:', error);
-      throw error;
-    }
-  };
-
   return (
     <div className="flex h-screen">
       {/* Main content area - no left margin, will be positioned by the sidebar */}
@@ -436,7 +401,7 @@ const POSPage = () => {
                 onRemoveItem={handleRemoveItem}
                 onPaymentMethodChange={setPaymentMethod}
                 onVatToggle={handleVatToggle}
-                vatEnabled={vatEnabled}
+                vatEnabled={isVatEnabled}
                 paymentMethod={paymentMethod}
                 phone={phone}
                 onPhoneChange={setPhone}
@@ -453,10 +418,10 @@ const POSPage = () => {
 
         {/* Receipt Dialog */}
         <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl bg-[#1A1F36] text-white border-[#2D3748]">
             <DialogHeader>
-              <DialogTitle>Transaction Complete</DialogTitle>
-              <DialogDescription>
+              <DialogTitle className="text-white">Transaction Complete</DialogTitle>
+              <DialogDescription className="text-gray-300">
                 Your sale has been completed successfully. Would you like to print or download the receipt?
               </DialogDescription>
             </DialogHeader>
@@ -465,7 +430,7 @@ const POSPage = () => {
                 {paymentMethod === 'cash' && (
                   <div className="mb-4 space-y-2">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <label htmlFor="cashAmount" className="text-sm font-medium">
+                      <label htmlFor="cashAmount" className="text-sm font-medium text-gray-300">
                         Amount Received (KES)
                       </label>
                       <input
@@ -475,17 +440,17 @@ const POSPage = () => {
                         step="0.01"
                         value={cashAmount}
                         onChange={handleCashAmountChange}
-                        className="w-full sm:w-32 px-2 py-1 border rounded"
+                        className="w-full sm:w-32 px-2 py-1 border border-[#2D3748] rounded bg-[#2D3748] text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0ABAB5]"
                         placeholder="0.00"
                       />
                     </div>
-                    <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center justify-between text-sm text-gray-300">
                       <span>Total Amount:</span>
                       <span>KES {receiptData.sale.total.toFixed(2)}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm font-medium">
-                      <span>Balance:</span>
-                      <span className={calculateBalance() >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      <span className="text-gray-300">Balance:</span>
+                      <span className={calculateBalance() >= 0 ? 'text-green-400' : 'text-red-400'}>
                         KES {calculateBalance().toFixed(2)}
                       </span>
                     </div>

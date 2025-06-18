@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { syncService } from '@/lib/sync';
 import { Database } from '@/types/supabase';
-import { exportProductsToCSV, generateStockUpdateTemplate } from '@/lib/bulk-operations/utils';
+import { exportProductsToCSV, generateStockUpdateTemplate, validateProductCSV, validateStockUpdateCSV, importProductsFromCSV } from '@/lib/bulk-operations/utils';
+import { submitStockUpdateEtimsInvoice } from '@/lib/etims/utils';
 import { Search, Download, Upload, Package, FileText, AlertCircle } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -185,37 +186,137 @@ export default function BulkOperationsPage() {
           }));
 
           toast.success('Import Successful: ' + message);
+
+          // --- eTIMS submission for new products with quantity > 0 ---
+          try {
+            // Dynamically import to avoid SSR issues
+            const parsedProducts = importProductsFromCSV(csvContent);
+            for (const product of parsedProducts) {
+              if (
+                typeof product.quantity === 'number' &&
+                product.quantity > 0 &&
+                product.cost_price !== undefined &&
+                product.name &&
+                product.id
+              ) {
+                const vatAmount = product.cost_price * product.quantity * 0.16;
+                await submitStockUpdateEtimsInvoice(
+                  storeId!,
+                  {
+                    id: product.id,
+                    name: product.name,
+                    cost_price: product.cost_price,
+                    quantity: product.quantity,
+                    vat_status: product.vat_status || false
+                  },
+                  product.quantity,
+                  vatAmount
+                );
+              }
+            }
+          } catch (etimsError) {
+            console.error('eTIMS submission for new products failed:', etimsError);
+            // Do not block import, just log
+          }
         } else {
           // Handle stock update import
           const updates = parseStockUpdateCSV(csvContent);
           
-          // Convert identifiers to product IDs
+          // Convert identifiers to product IDs and get product details
           const productUpdates = await Promise.all(
             updates.map(async ({ identifier, quantity_change }) => {
               // Try to find product by SKU first
               const product = products?.find(p => p.sku === identifier);
               if (product) {
-                return { product_id: product.id, quantity_change };
+                return { 
+                  product_id: product.id, 
+                  quantity_change,
+                  product: product
+                };
               }
               
               // If not found by SKU, assume it's a product ID
-              return { product_id: identifier, quantity_change };
+              const productById = products?.find(p => p.id === identifier);
+              if (productById) {
+                return { 
+                  product_id: identifier, 
+                  quantity_change,
+                  product: productById
+                };
+              }
+              
+              throw new Error(`Product not found: ${identifier}`);
             })
           );
 
-          const { error } = await syncService.updateStockBatch(productUpdates);
+          // Process stock updates and eTIMS invoicing
+          let successCount = 0;
+          let failedCount = 0;
+          const errors: string[] = [];
 
-          if (error) {
-            throw error;
+          for (const update of productUpdates) {
+            try {
+              // Update stock
+              const { error } = await syncService.updateStockBatch([{
+                product_id: update.product_id,
+                quantity_change: update.quantity_change
+              }]);
+
+              if (error) {
+                throw error;
+              }
+
+              // If quantity change is positive (adding stock), create eTIMS invoice
+              if (update.quantity_change > 0 && update.product) {
+                try {
+                  // Calculate VAT amount (16% of cost)
+                  const vatAmount = (update.product.cost_price * update.quantity_change) * 0.16;
+                  
+                  const { error: etimsError } = await submitStockUpdateEtimsInvoice(
+                    storeId!,
+                    {
+                      id: update.product.id,
+                      name: update.product.name,
+                      cost_price: update.product.cost_price,
+                      quantity: update.quantity_change,
+                      vat_status: update.product.vat_status || false
+                    },
+                    update.quantity_change,
+                    vatAmount
+                  );
+
+                  if (etimsError) {
+                    console.error('eTIMS invoice creation failed:', etimsError);
+                    // Don't fail the entire operation, just log the error
+                  } else {
+                    console.log('eTIMS invoice created successfully for stock update');
+                  }
+                } catch (etimsError) {
+                  console.error('Error creating eTIMS invoice:', etimsError);
+                  // Don't fail the entire operation, just log the error
+                }
+              }
+
+              successCount++;
+            } catch (error) {
+              failedCount++;
+              errors.push(`Failed to update ${update.product?.name || update.product_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
           }
 
           setImportProgress(prev => ({
             ...prev!,
-            processed: updates.length,
-            success: updates.length
+            processed: productUpdates.length,
+            success: successCount,
+            failed: failedCount,
+            errors
           }));
 
-          toast.success(`Successfully updated ${updates.length} products`);
+          if (failedCount === 0) {
+            toast.success(`Successfully updated ${successCount} products`);
+          } else {
+            toast.error(`Updated ${successCount} products, failed to update ${failedCount} products`);
+          }
         }
       };
 
@@ -341,7 +442,7 @@ export default function BulkOperationsPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">
-                            ${product.retail_price.toFixed(2)}
+                            ${product.retail_price?.toFixed(2) || '0.00'}
                           </span>
                           <Button
                             variant="outline"
@@ -364,7 +465,7 @@ export default function BulkOperationsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Bulk Stock Updates</CardTitle>
-                <CardDescription>Update multiple product quantities at once</CardDescription>
+                <CardDescription>Update multiple product quantities at once. Positive quantities will trigger eTIMS invoicing.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-4 mb-4">

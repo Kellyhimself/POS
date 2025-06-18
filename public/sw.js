@@ -42,6 +42,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
+  // Only handle GET requests
+  if (event.request.method !== 'GET') return;
+
   // Dynamically cache all Next.js/static assets, icons, css, media
   if (
     url.includes('/_next/static/') ||

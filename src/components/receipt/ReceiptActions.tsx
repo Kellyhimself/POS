@@ -31,8 +31,9 @@ interface ReceiptActionsProps {
 }
 
 export function ReceiptActions({ receipt }: ReceiptActionsProps) {
-  const { storeName, userMetadata } = useAuth();
-  const vatRegistrationNumber = userMetadata?.vat_registration_number || 'Pending Registration';
+  const { storeName, user } = useAuth();
+  const userMetadata = user?.user_metadata || {};
+  const vatRegistrationNumber = userMetadata.vat_registration_number || 'Pending Registration';
   console.log('ReceiptActions - Receipt Data:', receipt);
   
   if (!receipt || !receipt.items) {
@@ -139,14 +140,14 @@ export function ReceiptActions({ receipt }: ReceiptActionsProps) {
                 <div class="item">
                   <div><strong>${item.name}</strong> x ${item.quantity}</div>
                   <div>KES ${item.price.toFixed(2)} each</div>
-                  ${item.vat_amount > 0 ? `<div>VAT: KES ${item.vat_amount.toFixed(2)}</div>` : ''}
+                  ${item.vat_amount > 0 ? `<div>VAT: KES ${item.vat_amount.toFixed(2)}</div>` : '<div></div>'}
                   <div class="amount">Total: KES ${item.total.toFixed(2)}</div>
                 </div>
               `).join('')}
             </div>
             <div class="total">
               <div>Subtotal: KES ${(receipt.total - receipt.vat_total).toFixed(2)}</div>
-              <div>VAT: KES ${receipt.vat_total.toFixed(2)}</div>
+              <div>VAT: ${receipt.vat_total > 0 ? `KES ${receipt.vat_total.toFixed(2)}` : ''}</div>
               ${receipt.discount_amount && receipt.discount_amount > 0 ? `
                 <div class="discount">
                   Discount ${receipt.discount_type === 'percentage' && receipt.discount_value ? `(${receipt.discount_value}%)` : ''}: 
@@ -197,14 +198,14 @@ ITEMS:
 ${receipt.items.map(item => `
 ${item.name} x ${item.quantity}
 KES ${item.price.toFixed(2)} each (VAT included)
-${item.vat_amount > 0 ? `VAT Amount: KES ${item.vat_amount.toFixed(2)}` : 'VAT Exempt'}
+${item.vat_amount > 0 ? `VAT Amount: KES ${item.vat_amount.toFixed(2)}` : ''}
 Total: KES ${item.total.toFixed(2)}
 ------------------------------------------
 `).join('\n')}
 
 ==========================================
 Subtotal: KES ${(receipt.total - receipt.vat_total).toFixed(2)}
-VAT: KES ${receipt.vat_total.toFixed(2)}
+VAT: ${receipt.vat_total > 0 ? `KES ${receipt.vat_total.toFixed(2)}` : ''}
 ${receipt.discount_amount && receipt.discount_amount > 0 ? `
 Discount ${receipt.discount_type === 'percentage' && receipt.discount_value ? `(${receipt.discount_value}%)` : ''}: 
 -KES ${receipt.discount_amount.toFixed(2)}
@@ -242,8 +243,8 @@ Please come again
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="text-center mb-4">
-        <div className="text-lg font-semibold text-gray-900 mb-1">{storeName || 'Store'}</div>
-        <h3 className="text-lg font-semibold text-gray-900">Receipt #{receipt.id}</h3>
+        <div className="text-lg font-semibold text-gray-300 mb-1">{storeName || 'Store'}</div>
+        <h3 className="text-lg font-semibold text-gray-300">Receipt #{receipt.id}</h3>
         <p className="text-sm text-gray-500">{new Date().toLocaleString()}</p>
       </div>
       <div className="flex gap-4">

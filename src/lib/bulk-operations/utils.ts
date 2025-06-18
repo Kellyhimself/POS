@@ -23,38 +23,32 @@ export const exportProductsToCSV = (products: Product[]): string => {
     'id',
     'name',
     'sku',
-    'description',
     'category',
     'unit_of_measure',
     'quantity',
     'retail_price',
     'wholesale_price',
+    'wholesale_threshold',
+    'cost_price',
     'vat_status',
-    'vat_rate',
-    'barcode',
-    'supplier',
-    'minimum_stock',
-    'maximum_stock',
-    'reorder_point'
+    'selling_price',
+    'units_per_pack'
   ].join(',');
 
   const rows = products.map(product => [
     product.id,
     escapeCSV(product.name || ''),
     escapeCSV(product.sku || ''),
-    escapeCSV(product.description || ''),
     escapeCSV(product.category || ''),
     escapeCSV(product.unit_of_measure || ''),
     product.quantity,
-    product.retail_price,
+    product.retail_price || '',
     product.wholesale_price || '',
+    product.wholesale_threshold || '',
+    product.cost_price,
     product.vat_status ? 'true' : 'false',
-    product.vat_rate || '',
-    escapeCSV(product.barcode || ''),
-    escapeCSV(product.supplier || ''),
-    product.minimum_stock || '',
-    product.maximum_stock || '',
-    product.reorder_point || ''
+    product.selling_price,
+    product.units_per_pack
   ].join(','));
 
   return [headers, ...rows].join('\n');
@@ -218,10 +212,11 @@ export function validateProductCSV(csvContent: string): { isValid: boolean; erro
   const headers = rows[0].split(',');
   const requiredHeaders = [
     'name',
-    'sku',
     'unit_of_measure',
     'quantity',
-    'retail_price'
+    'cost_price',
+    'selling_price',
+    'units_per_pack'
   ];
 
   const missingHeaders = requiredHeaders.filter(header => !headers.includes(header));
@@ -248,9 +243,19 @@ export function validateProductCSV(csvContent: string): { isValid: boolean; erro
       errors.push(`Row ${i + 1}: Invalid quantity value`);
     }
 
-    const retailPrice = parseFloat(rowData.retail_price?.trim() || '');
-    if (isNaN(retailPrice) || retailPrice < 0) {
-      errors.push(`Row ${i + 1}: Invalid retail price value`);
+    const costPrice = parseFloat(rowData.cost_price?.trim() || '');
+    if (isNaN(costPrice) || costPrice < 0) {
+      errors.push(`Row ${i + 1}: Invalid cost price value`);
+    }
+
+    const sellingPrice = parseFloat(rowData.selling_price?.trim() || '');
+    if (isNaN(sellingPrice) || sellingPrice < 0) {
+      errors.push(`Row ${i + 1}: Invalid selling price value`);
+    }
+
+    const unitsPerPack = parseInt(rowData.units_per_pack?.trim() || '', 10);
+    if (isNaN(unitsPerPack) || unitsPerPack < 1) {
+      errors.push(`Row ${i + 1}: Invalid units per pack value (must be at least 1)`);
     }
   }
 

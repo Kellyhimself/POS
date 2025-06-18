@@ -10,7 +10,12 @@ import { useAuth } from '@/components/providers/AuthProvider';
 import { useGlobalProductCache } from '@/lib/hooks/useGlobalProductCache';
 import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
 import { useGlobalProductSync } from '@/lib/hooks/useGlobalProductSync';
+import { useGlobalPurchaseSync } from '@/lib/hooks/useGlobalPurchaseSync';
+import { useGlobalSupplierSync } from '@/lib/hooks/useGlobalSupplierSync';
+import { ModeIndicator } from '@/components/ui/ModeIndicator';
 import { useGlobalEtimsSync } from '@/lib/hooks/useGlobalEtimsSync';
+import { SettingsProvider } from '@/components/providers/SettingsProvider';
+
 import * as React from 'react';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -23,6 +28,8 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   useGlobalProductSync();
   useGlobalSaleSync();
   useGlobalProductCache();
+  useGlobalSupplierSync();
+  useGlobalPurchaseSync();
   //useGlobalEtimsSync();
 
   React.useEffect(() => {
@@ -121,10 +128,13 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         <AuthProvider>
-          <ReactQueryProvider>
-            <RootLayoutContent>{children}</RootLayoutContent>
-            <Toaster />
-          </ReactQueryProvider>
+          <SettingsProvider>
+            <ReactQueryProvider>
+              <RootLayoutContent>{children}</RootLayoutContent>
+              <ModeIndicator />
+              <Toaster />
+            </ReactQueryProvider>
+          </SettingsProvider>
         </AuthProvider>
       </body>
     </html>

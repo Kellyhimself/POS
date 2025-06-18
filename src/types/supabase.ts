@@ -18,6 +18,7 @@ export type Database = {
           response_data: Json | null
           status: string
           store_id: string
+          submission_type: string
           submitted_at: string
           updated_at: string | null
         }
@@ -29,6 +30,7 @@ export type Database = {
           response_data?: Json | null
           status: string
           store_id: string
+          submission_type?: string
           submitted_at: string
           updated_at?: string | null
         }
@@ -40,6 +42,7 @@ export type Database = {
           response_data?: Json | null
           status?: string
           store_id?: string
+          submission_type?: string
           submitted_at?: string
           updated_at?: string | null
         }
@@ -125,6 +128,111 @@ export type Database = {
           },
         ]
       }
+      purchase_items: {
+        Row: {
+          created_at: string | null
+          id: string
+          product_id: string | null
+          purchase_id: string | null
+          quantity: number
+          unit_cost: number
+          vat_amount: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          product_id?: string | null
+          purchase_id?: string | null
+          quantity: number
+          unit_cost: number
+          vat_amount?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          product_id?: string | null
+          purchase_id?: string | null
+          quantity?: number
+          unit_cost?: number
+          vat_amount?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_items_purchase_id_fkey"
+            columns: ["purchase_id"]
+            isOneToOne: false
+            referencedRelation: "purchases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchases: {
+        Row: {
+          created_at: string | null
+          date: string
+          id: string
+          input_vat_amount: number | null
+          invoice_number: string | null
+          is_vat_included: boolean | null
+          notes: string | null
+          store_id: string | null
+          supplier_id: string | null
+          supplier_vat_no: string | null
+          synced: boolean | null
+          total_amount: number
+        }
+        Insert: {
+          created_at?: string | null
+          date?: string
+          id?: string
+          input_vat_amount?: number | null
+          invoice_number?: string | null
+          is_vat_included?: boolean | null
+          notes?: string | null
+          store_id?: string | null
+          supplier_id?: string | null
+          supplier_vat_no?: string | null
+          synced?: boolean | null
+          total_amount: number
+        }
+        Update: {
+          created_at?: string | null
+          date?: string
+          id?: string
+          input_vat_amount?: number | null
+          invoice_number?: string | null
+          is_vat_included?: boolean | null
+          notes?: string | null
+          store_id?: string | null
+          supplier_id?: string | null
+          supplier_vat_no?: string | null
+          synced?: boolean | null
+          total_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchases_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchases_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stores: {
         Row: {
           address: string | null
@@ -158,6 +266,30 @@ export type Database = {
           mpesa_details?: Json | null
           name?: string
           vat_number?: string | null
+        }
+        Relationships: []
+      }
+      suppliers: {
+        Row: {
+          contact_info: string | null
+          created_at: string | null
+          id: string
+          name: string
+          vat_no: string | null
+        }
+        Insert: {
+          contact_info?: string | null
+          created_at?: string | null
+          id?: string
+          name: string
+          vat_no?: string | null
+        }
+        Update: {
+          contact_info?: string | null
+          created_at?: string | null
+          id?: string
+          name?: string
+          vat_no?: string | null
         }
         Relationships: []
       }
@@ -304,6 +436,7 @@ export type Database = {
           p_total_amount: number
           p_vat_total: number
           p_is_sync?: boolean
+          p_timestamp?: string
         }
         Returns: string
       }

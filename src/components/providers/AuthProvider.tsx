@@ -88,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await stateCache.put('/app-state', new Response(JSON.stringify(state)));
       } catch (error) {
         // Silent error handling
+        console.debug('Cache write error:', error);
       }
     }
   };
@@ -104,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (error) {
         // Silent error handling
+        console.debug('Cache read error:', error);
       }
     }
     return null;
@@ -199,6 +201,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (offlineContext) {
         const { userId, storeId, userMetadata } = offlineContext;
         
+        // Check if user is signed out
+        if (userMetadata?.signedOut) {
+          console.log('🚪 User is signed out offline, not creating session');
+          setUser(null);
+          setSession(null);
+          setStoreId(null);
+          setStoreName(null);
+          return;
+        }
+        
         // Create a mock session for offline mode
         const mockUser: User = {
           id: userId,
@@ -249,7 +261,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStoreId(null);
         setStoreName(null);
       }
-    } catch {
+    } catch (error) {
+      console.debug('Offline user handling error:', error);
       setUser(null);
       setSession(null);
       setStoreId(null);
@@ -752,6 +765,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           lastSync: null
         });
         console.log('✅ AuthProvider - Application state cleared');
+        
+        // Redirect to login page after signout
+        if (!isOnline) {
+          console.log('🔄 AuthProvider - Redirecting to login page after offline signout');
+          router.push('/login');
+        }
         
         return { error: null };
       } catch (error) {
