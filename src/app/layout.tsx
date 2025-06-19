@@ -5,36 +5,37 @@ import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/components/providers/AuthProvider';
 import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { useGlobalProductCache } from '@/lib/hooks/useGlobalProductCache';
-import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
-import { useGlobalProductSync } from '@/lib/hooks/useGlobalProductSync';
-import { useGlobalPurchaseSync } from '@/lib/hooks/useGlobalPurchaseSync';
-import { useGlobalSupplierSync } from '@/lib/hooks/useGlobalSupplierSync';
 import { ModeIndicator } from '@/components/ui/ModeIndicator';
-import { useGlobalEtimsSync } from '@/lib/hooks/useGlobalEtimsSync';
 import { SettingsProvider } from '@/components/providers/SettingsProvider';
+import { UnifiedServiceProvider } from '@/components/providers/UnifiedServiceProvider';
+import { getUnifiedService } from '@/lib/services/UnifiedService';
+import { getModeManager } from '@/lib/mode/ModeManager';
 
 import * as React from 'react';
 
 const inter = Inter({ subsets: ['latin'] });
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
   const { user, loading } = useAuth();
 
-  useGlobalProductSync();
-  useGlobalSaleSync();
-  useGlobalProductCache();
-  useGlobalSupplierSync();
-  useGlobalPurchaseSync();
-  //useGlobalEtimsSync();
+  // Initialize unified service and mode manager
+  React.useEffect(() => {
+    const modeManager = getModeManager();
+    getUnifiedService(modeManager);
+    
+    console.log('🔧 Unified Service initialized:', {
+      currentMode: modeManager.getCurrentMode(),
+      isOnline: modeManager.isOnlineMode(),
+      isOffline: modeManager.isOfflineMode(),
+    });
+  }, []);
 
   React.useEffect(() => {
     if (!loading && user?.user_metadata?.store_id) {
-      console.log('🔍 Auth ready for sync', {
+      console.log('🔍 Auth ready for unified service', {
         storeId: user.user_metadata.store_id,
         isOnline: navigator.onLine,
       });
@@ -128,13 +129,15 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         <AuthProvider>
-          <SettingsProvider>
-            <ReactQueryProvider>
-              <RootLayoutContent>{children}</RootLayoutContent>
+          <UnifiedServiceProvider>
+            <SettingsProvider>
               <ModeIndicator />
-              <Toaster />
-            </ReactQueryProvider>
-          </SettingsProvider>
+              <ReactQueryProvider>
+                <RootLayoutContent>{children}</RootLayoutContent>
+                <Toaster />
+              </ReactQueryProvider>
+            </SettingsProvider>
+          </UnifiedServiceProvider>
         </AuthProvider>
       </body>
     </html>

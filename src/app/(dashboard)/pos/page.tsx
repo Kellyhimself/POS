@@ -16,10 +16,10 @@ import { Cart } from '@/components/cart/Cart';
 import { ReceiptActions } from '@/components/receipt/ReceiptActions';
 import { Database } from '@/types/supabase';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSync } from '@/hooks/useSync';
-import { formatVatStatus } from '@/lib/vat/utils';
-import { formatEtimsInvoice, submitEtimsInvoice } from '@/lib/etims/utils';
+import { formatEtimsInvoice } from '@/lib/etims/utils';
+import { submitEtimsInvoice } from '@/lib/etims/utils';
 import { useVatSettings } from '@/hooks/useVatSettings';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -56,6 +56,8 @@ interface TransactionResponse {
       subtotal: number;
       vat_total: number;
       total: number;
+      discount_amount?: number;
+      discount_type?: 'percentage' | 'cash' | null;
       products: Array<{
         id: string;
         name: string;
@@ -80,26 +82,40 @@ interface MpesaResponse {
 
 const POSPage = () => {
   const { user, storeId, isOnline } = useAuth();
+  const { currentMode, createSale } = useUnifiedService();
   const [phone, setPhone] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa' | 'credit'>('cash');
-  const { isVatEnabled, toggleVat, canToggleVat, calculatePrice, calculateVatAmount } = useVatSettings();
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile money' | 'credit'>('cash');
+  const { toggleVat, canToggleVat, calculatePrice, calculateVatAmount } = useVatSettings();
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<TransactionResponse['receipt'] | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [shouldRefetchProducts, setShouldRefetchProducts] = useState(false);
   const [discountType, setDiscountType] = useState<'percentage' | 'cash' | null>(null);
   const [discountValue, setDiscountValue] = useState<number>(0);
-  const { saveSale } = useSync(storeId || '');
   const queryClient = useQueryClient();
 
-  console.log('POS Page - Auth State:', { user, storeId, isOnline });
+  console.log('POS Page - Auth State:', { user, storeId, isOnline, currentMode });
 
   // Add to cart mutation
   const addToCartMutation = useMutation({
     mutationFn: async ({ product, isWholesale }: { product: Product; isWholesale: boolean }) => {
       const minQuantity = isWholesale ? (product.wholesale_threshold || 1) : 1;
-      const basePrice = isWholesale ? (product.wholesale_price ?? 0) : (product.retail_price ?? 0);
+      
+      // Safety check for product prices
+      const rawPrice = isWholesale ? product.wholesale_price : product.retail_price;
+      const basePrice = (typeof rawPrice === 'number' && !isNaN(rawPrice)) ? rawPrice : 0;
+      
+      if (basePrice === 0) {
+        console.warn('⚠️ Product has no valid price:', {
+          productId: product.id,
+          productName: product.name,
+          isWholesale,
+          wholesalePrice: product.wholesale_price,
+          retailPrice: product.retail_price
+        });
+      }
+      
       const isVatable = product.vat_status ?? false;
       
       const price = calculatePrice(basePrice, isVatable);
@@ -181,6 +197,18 @@ const POSPage = () => {
     setCashAmount(value);
   };
 
+  // Helper function to map Cart payment method to backend payment method
+  const mapPaymentMethod = (method: 'cash' | 'mobile money' | 'credit'): 'cash' | 'mpesa' => {
+    switch (method) {
+      case 'mobile money':
+        return 'mpesa';
+      case 'credit':
+        return 'cash'; // Map credit to cash for now
+      default:
+        return method;
+    }
+  };
+
   // Payment mutation
   const paymentMutation = useMutation({
     mutationFn: async () => {
@@ -204,9 +232,8 @@ const POSPage = () => {
       }, 0);
 
       const vatTotal = cart.reduce((sum, item) => {
-        // Calculate VAT based on the calculated price
-        const priceWithVat = calculatePrice(item.price, item.product.vat_status ?? false);
-        const vatAmount = priceWithVat - item.price;
+        // Calculate VAT using the correct function
+        const vatAmount = calculateVatAmount(item.price, item.product.vat_status ?? false);
         return sum + (vatAmount * item.quantity);
       }, 0);
 
@@ -230,8 +257,8 @@ const POSPage = () => {
       });
 
       // Process payment based on method
-      if (paymentMethod === 'mpesa') {
-        if (!phone) throw new Error('Phone number is required for M-Pesa payment');
+      if (paymentMethod === 'mobile money') {
+        if (!phone) throw new Error('Phone number is required for mobile money payment');
         if (isOnline) {
           const mpesaResponse = await fetch('/api/mpesa', {
             method: 'POST',
@@ -243,7 +270,7 @@ const POSPage = () => {
             }),
           });
           if (!mpesaResponse.ok) {
-            throw new Error('M-Pesa payment failed');
+            throw new Error('Mobile money payment failed');
           }
           const mpesaData: MpesaResponse = await mpesaResponse.json();
           if (!mpesaData.success) {
@@ -253,25 +280,24 @@ const POSPage = () => {
       }
 
       // Save the sale
-      const saleResult = await saveSale({
+      const saleResult = await createSale({
         store_id: storeId,
+        user_id: user?.id || '',
         products: cart.map(item => ({
           id: item.product.id,
           quantity: item.quantity,
-          displayPrice: item.displayPrice || item.price,
-          vat_amount: item.vat_amount
+          unit_price: item.displayPrice || item.price,
+          vat_amount: item.vat_amount // This is VAT per unit, which is correct
         })),
-        payment_method: paymentMethod,
+        payment_method: mapPaymentMethod(paymentMethod),
         total_amount,
-        vat_total: vatTotal,
-        discount_amount: discountAmount,
-        discount_type: discountType
+        vat_total: vatTotal
       });
 
       console.log('✅ Sale saved:', {
         sale_id: saleResult.id,
-        total_amount: saleResult.total_amount,
-        vat_total: saleResult.vat_total
+        total: saleResult.total,
+        vat_amount: saleResult.vat_amount
       });
 
       // Format and submit eTIMS invoice if VAT is applicable
@@ -281,7 +307,17 @@ const POSPage = () => {
           vat_total: vatTotal
         });
 
-        const etimsInvoice = formatEtimsInvoice(saleResult, cart.map(item => ({
+        // Create a mock transaction object for eTIMS formatting
+        const mockTransaction = {
+          id: saleResult.id,
+          store_id: saleResult.store_id || storeId,
+          total_amount: saleResult.total,
+          vat_total: saleResult.vat_amount || 0,
+          payment_method: saleResult.payment_method,
+          timestamp: saleResult.timestamp || new Date().toISOString()
+        };
+
+        const etimsInvoice = formatEtimsInvoice(mockTransaction, cart.map(item => ({
           id: item.product.id,
           name: item.product.name,
           quantity: item.quantity,
@@ -300,11 +336,10 @@ const POSPage = () => {
         const { data: etimsData, error: etimsError } = await submitEtimsInvoice(etimsInvoice);
         if (etimsError) {
           console.error('❌ Error saving eTIMS invoice:', etimsError);
-        } else {
+        } else if (etimsData) {
           console.log('✅ eTIMS invoice saved:', {
             invoice_number: etimsData.invoice_number,
-            status: etimsData.status,
-            synced: etimsData.synced
+            status: etimsData.status
           });
         }
       } else {
@@ -320,12 +355,12 @@ const POSPage = () => {
         success: true,
         transaction: {
           id: saleResult.id,
-          store_id: saleResult.store_id,
-          total_amount: saleResult.total_amount,
-          vat_total: saleResult.vat_total,
-          payment_method: saleResult.payment_method,
-          customer_phone: paymentMethod === 'mpesa' ? phone : null,
-          timestamp: saleResult.timestamp
+          store_id: saleResult.store_id || storeId,
+          total_amount: saleResult.total,
+          vat_total: saleResult.vat_amount || 0,
+          payment_method: saleResult.payment_method || mapPaymentMethod(paymentMethod),
+          customer_phone: paymentMethod === 'mobile money' ? phone : null,
+          timestamp: saleResult.timestamp || new Date().toISOString()
         },
         receipt: {
           store: {
@@ -335,20 +370,20 @@ const POSPage = () => {
           },
           sale: {
             id: saleResult.id,
-            created_at: saleResult.timestamp,
-            payment_method: saleResult.payment_method,
+            created_at: saleResult.timestamp || new Date().toISOString(),
+            payment_method: saleResult.payment_method || mapPaymentMethod(paymentMethod),
             subtotal: subtotal,
-            vat_total: saleResult.vat_total,
-            ...(discountAmount > 0 && { discount_amount: discountAmount }),
-            ...(discountType && { discount_type: discountType }),
-            total: saleResult.total_amount,
+            vat_total: saleResult.vat_amount || 0,
+            total: saleResult.total,
+            discount_amount: discountAmount,
+            discount_type: discountType,
             products: cart.map(item => ({
               id: item.product.id,
               name: item.product.name,
               quantity: item.quantity,
               price: item.displayPrice || item.price,
               vat_amount: item.vat_amount,
-              vat_status: formatVatStatus(item.product.vat_status),
+              vat_status: item.product.vat_status ? 'vatable' : 'non-vatable',
               total: (item.displayPrice || item.price) * item.quantity
             }))
           }
@@ -401,10 +436,7 @@ const POSPage = () => {
                 onRemoveItem={handleRemoveItem}
                 onPaymentMethodChange={setPaymentMethod}
                 onVatToggle={handleVatToggle}
-                vatEnabled={isVatEnabled}
                 paymentMethod={paymentMethod}
-                phone={phone}
-                onPhoneChange={setPhone}
                 onCheckout={() => paymentMutation.mutate()}
                 isProcessing={paymentMutation.isPending}
                 discountType={discountType}
@@ -473,7 +505,7 @@ const POSPage = () => {
                     discount_type: receiptData.sale.discount_type,
                     discount_value: discountValue,
                     payment_method: receiptData.sale.payment_method,
-                    phone: paymentMethod === 'mpesa' ? phone : undefined,
+                    phone: paymentMethod === 'mobile money' ? phone : undefined,
                     cash_amount: paymentMethod === 'cash' ? cashAmount : undefined,
                     balance: paymentMethod === 'cash' ? calculateBalance() : undefined
                   }}

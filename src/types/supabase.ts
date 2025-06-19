@@ -9,6 +9,30 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          default_vat_rate: number
+          enable_vat_toggle_on_pos: boolean
+          id: string
+          updated_at: string
+          vat_pricing_model: string
+        }
+        Insert: {
+          default_vat_rate?: number
+          enable_vat_toggle_on_pos?: boolean
+          id?: string
+          updated_at?: string
+          vat_pricing_model?: string
+        }
+        Update: {
+          default_vat_rate?: number
+          enable_vat_toggle_on_pos?: boolean
+          id?: string
+          updated_at?: string
+          vat_pricing_model?: string
+        }
+        Relationships: []
+      }
       etims_submissions: {
         Row: {
           created_at: string | null

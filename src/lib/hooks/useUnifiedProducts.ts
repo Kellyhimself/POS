@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { getModeManager } from '@/lib/mode/ModeManager';
 import { getUnifiedService } from '@/lib/services/UnifiedService';
@@ -15,7 +15,11 @@ export interface ProductSyncStatus {
 }
 
 export function useUnifiedProducts(storeId: string) {
+  console.log('🔄 useUnifiedProducts: Hook called with storeId:', storeId);
+  
   const { user } = useAuth();
+  console.log('🔄 useUnifiedProducts: User from auth:', user ? 'Authenticated' : 'Not authenticated');
+  
   const [products, setProducts] = useState<Database['public']['Tables']['products']['Row'][]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,54 +34,41 @@ export function useUnifiedProducts(storeId: string) {
     currentMode: 'online'
   });
 
-  const modeManager = getModeManager();
-  const unifiedService = getUnifiedService(modeManager);
+  console.log('🔄 useUnifiedProducts: State initialized', { 
+    productsCount: products.length, 
+    isLoading, 
+    error, 
+    currentMode 
+  });
 
-  // Listen for mode changes
-  useEffect(() => {
-    const handleModeChange = (event: CustomEvent) => {
-      const newMode = event.detail.mode;
-      setCurrentMode(newMode);
-      setSyncStatus(prev => ({ ...prev, currentMode: newMode }));
-      console.log(`🔄 Products hook: Mode changed to ${newMode}`);
-      
-      // Refresh data when mode changes
-      fetchProducts();
-    };
+  // Use refs to store singleton instances to prevent recreation
+  const modeManagerRef = useRef<ReturnType<typeof getModeManager> | null>(null);
+  const unifiedServiceRef = useRef<ReturnType<typeof getUnifiedService> | null>(null);
 
-    // Set initial mode
-    setCurrentMode(modeManager.getCurrentMode());
-    setSyncStatus(prev => ({ ...prev, currentMode: modeManager.getCurrentMode() }));
+  // Initialize singletons once
+  if (!modeManagerRef.current) {
+    console.log('🔄 useUnifiedProducts: Initializing mode manager');
+    modeManagerRef.current = getModeManager();
+    console.log('✅ useUnifiedProducts: Mode manager initialized');
+  }
 
-    window.addEventListener('modeChange', handleModeChange as EventListener);
-    
-    return () => {
-      window.removeEventListener('modeChange', handleModeChange as EventListener);
-    };
-  }, [modeManager]);
+  if (!unifiedServiceRef.current && modeManagerRef.current) {
+    console.log('🔄 useUnifiedProducts: Initializing unified service');
+    unifiedServiceRef.current = getUnifiedService(modeManagerRef.current);
+    console.log('✅ useUnifiedProducts: Unified service initialized');
+  }
 
-  // Real-time subscriptions (only for online mode)
-  useEffect(() => {
-    if (currentMode === 'online' && storeId) {
-      console.log('🔄 Setting up real-time product subscriptions');
-      
-      const channel = unifiedService.subscribeToProducts(storeId, (payload) => {
-        console.log('🔄 Real-time product update:', payload);
-        handleProductChange(payload);
-      });
+  const isInitialized = useRef(false);
 
-      return () => {
-        if (channel) {
-          console.log('🔄 Cleaning up real-time product subscriptions');
-          // Note: Supabase channel cleanup is handled automatically
-        }
-      };
-    }
-  }, [currentMode, storeId, unifiedService]);
-
-  const handleProductChange = useCallback((payload: any) => {
+  // Define handleProductChange before using it in useEffect
+  const handleProductChange = useCallback((payload: Record<string, unknown>) => {
+    console.log('🔄 useUnifiedProducts: Handling product change:', payload);
     setProducts(prevProducts => {
-      const { eventType, new: newRecord, old: oldRecord } = payload;
+      const { eventType, new: newRecord, old: oldRecord } = payload as {
+        eventType: string;
+        new: Database['public']['Tables']['products']['Row'];
+        old: Database['public']['Tables']['products']['Row'];
+      };
       
       switch (eventType) {
         case 'INSERT':
@@ -94,15 +85,93 @@ export function useUnifiedProducts(storeId: string) {
     });
   }, []);
 
+  // Listen for mode changes
+  useEffect(() => {
+    console.log('🔄 useUnifiedProducts: Mode change useEffect running');
+    
+    if (!modeManagerRef.current) {
+      console.log('❌ useUnifiedProducts: Mode manager not available');
+      return;
+    }
+
+    const handleModeChange = (event: CustomEvent) => {
+      const newMode = event.detail.mode;
+      console.log('🔄 useUnifiedProducts: Mode change event received:', newMode);
+      setCurrentMode(newMode);
+      setSyncStatus(prev => ({ ...prev, currentMode: newMode }));
+      console.log(`🔄 Products hook: Mode changed to ${newMode}`);
+      
+      // Refresh data when mode changes
+      if (isInitialized.current) {
+        console.log('🔄 useUnifiedProducts: Refreshing products due to mode change');
+        // Use setTimeout to avoid calling during render
+        setTimeout(() => {
+          fetchProductsRef.current?.();
+        }, 0);
+      }
+    };
+
+    // Set initial mode
+    const initialMode = modeManagerRef.current.getCurrentMode();
+    console.log('🔄 useUnifiedProducts: Setting initial mode:', initialMode);
+    setCurrentMode(initialMode);
+    setSyncStatus(prev => ({ ...prev, currentMode: initialMode }));
+
+    window.addEventListener('modeChange', handleModeChange as EventListener);
+    console.log('✅ useUnifiedProducts: Mode change listener added');
+    
+    return () => {
+      console.log('🔄 useUnifiedProducts: Cleaning up mode change listener');
+      window.removeEventListener('modeChange', handleModeChange as EventListener);
+    };
+  }, []); // Empty dependency array since we're using refs
+
+  // Real-time subscriptions (only for online mode)
+  useEffect(() => {
+    console.log('🔄 useUnifiedProducts: Real-time subscription useEffect running', { 
+      currentMode, 
+      storeId, 
+      hasUnifiedService: !!unifiedServiceRef.current 
+    });
+    
+    if (currentMode === 'online' && storeId && unifiedServiceRef.current) {
+      console.log('🔄 Setting up real-time product subscriptions');
+      
+      // Use a stable callback to prevent subscription recreation
+      const stableCallback = (payload: Record<string, unknown>) => {
+        console.log('🔄 Real-time product update:', payload);
+        handleProductChange(payload);
+      };
+      
+      const channel = unifiedServiceRef.current.subscribeToProducts(storeId, stableCallback);
+
+      return () => {
+        if (channel) {
+          console.log('🔄 Cleaning up real-time product subscriptions');
+          // Note: Supabase channel cleanup is handled automatically
+        }
+      };
+    }
+  }, [currentMode, storeId, handleProductChange]); // Include handleProductChange in dependencies
+
+  // Create a ref to store the fetchProducts function to avoid recreation
+  const fetchProductsRef = useRef<() => Promise<void>>();
+
   const fetchProducts = useCallback(async () => {
-    if (!storeId) return;
+    console.log('🔄 useUnifiedProducts: fetchProducts called', { storeId, currentMode });
+    
+    if (!storeId || !unifiedServiceRef.current) {
+      console.log('❌ useUnifiedProducts: Cannot fetch products - missing storeId or unifiedService');
+      return;
+    }
 
     try {
       setIsLoading(true);
       setError(null);
       console.log(`🔄 Fetching products in ${currentMode} mode`);
       
-      const data = await unifiedService.getProducts(storeId);
+      const data = await unifiedServiceRef.current.getProducts(storeId);
+      console.log('✅ useUnifiedProducts: Products fetched successfully:', data.length);
       setProducts(data);
       
       setSyncStatus(prev => ({
@@ -114,6 +183,7 @@ export function useUnifiedProducts(storeId: string) {
       console.log(`✅ Fetched ${data.length} products in ${currentMode} mode`);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch products';
+      console.error('❌ useUnifiedProducts: Error fetching products:', err);
       setError(errorMessage);
       setSyncStatus(prev => ({
         ...prev,
@@ -123,14 +193,21 @@ export function useUnifiedProducts(storeId: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [storeId, currentMode, unifiedService]);
+  }, [storeId]); // Remove currentMode from dependencies to prevent recreation
+
+  // Store the fetchProducts function in a ref
+  fetchProductsRef.current = fetchProducts;
 
   const updateProduct = useCallback(async (productId: string, updates: Partial<Database['public']['Tables']['products']['Update']>) => {
+    console.log('🔄 useUnifiedProducts: updateProduct called', { productId, updates });
+    
+    if (!unifiedServiceRef.current) throw new Error('Unified service not initialized');
+
     try {
       setError(null);
       console.log(`🔄 Updating product in ${currentMode} mode`);
       
-      const result = await unifiedService.updateProduct(productId, updates);
+      const result = await unifiedServiceRef.current.updateProduct(productId, updates);
       
       // Update local state
       setProducts(prevProducts => 
@@ -156,14 +233,18 @@ export function useUnifiedProducts(storeId: string) {
       console.error('❌ Error updating product:', err);
       throw err;
     }
-  }, [currentMode, unifiedService]);
+  }, [currentMode]);
 
   const createProduct = useCallback(async (productData: any) => {
+    console.log('🔄 useUnifiedProducts: createProduct called', { productData });
+    
+    if (!unifiedServiceRef.current) throw new Error('Unified service not initialized');
+
     try {
       setError(null);
       console.log(`🔄 Creating product in ${currentMode} mode`);
       
-      const result = await unifiedService.createProduct(productData);
+      const result = await unifiedServiceRef.current.createProduct(productData);
       
       // Add to local state
       setProducts(prevProducts => [...prevProducts, result]);
@@ -185,14 +266,18 @@ export function useUnifiedProducts(storeId: string) {
       console.error('❌ Error creating product:', err);
       throw err;
     }
-  }, [currentMode, unifiedService]);
+  }, [currentMode]);
 
   const updateStock = useCallback(async (productId: string, quantityChange: number, version?: number) => {
+    console.log('🔄 useUnifiedProducts: updateStock called', { productId, quantityChange, version });
+    
+    if (!unifiedServiceRef.current) throw new Error('Unified service not initialized');
+
     try {
       setError(null);
       console.log(`🔄 Updating stock in ${currentMode} mode`);
       
-      const result = await unifiedService.updateStock(productId, quantityChange, version);
+      const result = await unifiedServiceRef.current.updateStock(productId, quantityChange, version);
       
       // Update local state
       setProducts(prevProducts => 
@@ -218,26 +303,46 @@ export function useUnifiedProducts(storeId: string) {
       console.error('❌ Error updating stock:', err);
       throw err;
     }
-  }, [currentMode, unifiedService]);
+  }, [currentMode]);
 
-  // Initial fetch
+  // Initial fetch - only run once when storeId and user are available
   useEffect(() => {
-    if (storeId && user) {
-      fetchProducts();
+    console.log('🔄 useUnifiedProducts: Initial fetch useEffect running', { 
+      storeId, 
+      hasUser: !!user, 
+      isInitialized: isInitialized.current 
+    });
+    
+    if (storeId && user && !isInitialized.current) {
+      console.log('🔄 useUnifiedProducts: Initializing and fetching products');
+      isInitialized.current = true;
+      // Use setTimeout to avoid calling fetchProducts during render
+      setTimeout(() => {
+        fetchProductsRef.current?.();
+      }, 0);
     }
-  }, [storeId, user, fetchProducts]);
+  }, [storeId, user]); // Removed fetchProducts from dependencies
 
   // Periodic sync for offline mode
   useEffect(() => {
-    if (currentMode === 'offline' && storeId) {
+    console.log('🔄 useUnifiedProducts: Periodic sync useEffect running', { 
+      currentMode, 
+      storeId, 
+      isInitialized: isInitialized.current,
+      hasUnifiedService: !!unifiedServiceRef.current
+    });
+    
+    if (currentMode === 'offline' && storeId && isInitialized.current && unifiedServiceRef.current) {
+      console.log('🔄 useUnifiedProducts: Setting up periodic sync interval');
+      
       const syncInterval = setInterval(async () => {
         try {
-          const pendingCount = await unifiedService.getPendingSyncCount();
+          const pendingCount = await unifiedServiceRef.current!.getPendingSyncCount();
           if (pendingCount > 0) {
             console.log(`🔄 Syncing ${pendingCount} pending items`);
             setSyncStatus(prev => ({ ...prev, isSyncing: true }));
             
-            await unifiedService.syncPendingData();
+            await unifiedServiceRef.current!.syncPendingData();
             
             setSyncStatus(prev => ({ 
               ...prev, 
@@ -246,7 +351,7 @@ export function useUnifiedProducts(storeId: string) {
             }));
             
             // Refresh products after sync
-            fetchProducts();
+            fetchProductsRef.current?.();
           }
         } catch (err) {
           console.error('❌ Error during periodic sync:', err);
@@ -258,10 +363,15 @@ export function useUnifiedProducts(storeId: string) {
         }
       }, 60000); // Sync every minute
 
-      return () => clearInterval(syncInterval);
+      return () => {
+        console.log('🔄 useUnifiedProducts: Cleaning up periodic sync interval');
+        clearInterval(syncInterval);
+      };
     }
-  }, [currentMode, storeId, unifiedService, fetchProducts]);
+  }, [currentMode, storeId]); // Removed fetchProducts from dependencies
 
+  console.log('🔄 useUnifiedProducts: Returning hook result');
+  
   return {
     products,
     isLoading,
@@ -273,9 +383,9 @@ export function useUnifiedProducts(storeId: string) {
     createProduct,
     updateStock,
     // Mode-specific utilities
-    isOnlineMode: unifiedService.isOnlineMode(),
-    isOfflineMode: unifiedService.isOfflineMode(),
-    getPendingSyncCount: unifiedService.getPendingSyncCount.bind(unifiedService),
-    syncPendingData: unifiedService.syncPendingData.bind(unifiedService)
+    isOnlineMode: unifiedServiceRef.current?.isOnlineMode() || false,
+    isOfflineMode: unifiedServiceRef.current?.isOfflineMode() || false,
+    getPendingSyncCount: unifiedServiceRef.current?.getPendingSyncCount.bind(unifiedServiceRef.current) || (() => Promise.resolve(0)),
+    syncPendingData: unifiedServiceRef.current?.syncPendingData.bind(unifiedServiceRef.current) || (() => Promise.resolve())
   };
 } 

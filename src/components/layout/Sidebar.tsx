@@ -17,13 +17,13 @@ interface NavItem {
 }
 
 const navigationItems: NavItem[] = [
-  { name: 'POS', href: '/pos', icon: '💳' },
   { 
     name: 'Dashboard', 
     href: '/dashboard', 
     icon: '📊',
     requiredRoles: ['admin', 'manager', 'accountant', 'owner']
   },
+  { name: 'POS', href: '/pos', icon: '💳' },
   { 
     name: 'Inventory', 
     href: '/inventory', 
@@ -117,65 +117,74 @@ const Sidebar = () => {
   if (!user) return null;
 
   const SidebarContent = () => (
-    <>
-      <div className="px-4 mb-2 flex items-center justify-between mt-4">
-        {<h1 className={cn(
-          "text-xl font-bold text-white transition-all duration-300",
-          !isOpen && "opacity-0 w-0"
-        )}>
-          POS System
-        </h1>}
-        {!isMobile && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-white/10"
-            onClick={toggleSidebar}
-          >
-            {isOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </Button>
-        )}
+    <div className="flex flex-col h-full">
+      {/* Header with title and toggle button */}
+      <div className="px-4 py-3 border-b border-white/10">
+        <div className="flex items-center justify-between">
+          <h1 className={cn(
+            "text-xl font-bold text-white transition-all duration-300",
+            !isOpen && "opacity-0 w-0"
+          )}>
+            Navigation
+          </h1>
+          {!isMobile && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/10"
+              onClick={toggleSidebar}
+            >
+              {isOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
+          )}
+        </div>
       </div>
       
-      <nav className="px-4 space-y-1">
-        {navigationItems.filter(item => item.name !== 'Settings').map((item) => {
-          if (!hasAccess(item)) return null;
-          
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "group flex items-center px-4 py-3 text-sm rounded-lg transition-colors relative",
-                pathname === item.href 
-                  ? 'bg-[#0ABAB5] text-white' 
-                  : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
-                !isOpen && "justify-center"
-              )}
-            >
-              <span className={cn(
-                "transition-all duration-300",
-                !isOpen && "mr-0"
-              )}>{item.icon}</span>
-              <span className={cn(
-                "transition-all duration-300",
-                !isOpen && "opacity-0 w-0"
-              )}>
-                {item.name}
-              </span>
-              {!isOpen && (
-                <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+      {/* Navigation items - distributed throughout the available space */}
+      <div className="px-4 py-3">
+        <nav className="space-y-1">
+          {navigationItems.filter(item => item.name !== 'Settings').map((item) => {
+            if (!hasAccess(item)) return null;
+            
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "group flex items-center px-4 py-3 text-sm rounded-lg transition-colors relative",
+                  pathname === item.href 
+                    ? 'bg-[#0ABAB5] text-white' 
+                    : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
+                  !isOpen && "justify-center"
+                )}
+              >
+                <span className={cn(
+                  "transition-all duration-300",
+                  !isOpen && "mr-0"
+                )}>{item.icon}</span>
+                <span className={cn(
+                  "transition-all duration-300",
+                  !isOpen && "opacity-0 w-0"
+                )}>
                   {item.name}
-                </div>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
+                </span>
+                {!isOpen && (
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                    {item.name}
+                  </div>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* Spacer to push Settings up */}
+      <div className="h-8"></div>
 
       {/* Settings menu item positioned at the bottom */}
       {hasAccess(navigationItems.find(item => item.name === 'Settings')!) && (
-        <div className="absolute bottom-20 left-0 right-0 px-4">
+        <div className="px-4 pb-4">
           <Link
             href="/settings"
             className={cn(
@@ -204,7 +213,7 @@ const Sidebar = () => {
           </Link>
         </div>
       )}
-    </>
+    </div>
   );
 
   if (isMobile) {
@@ -270,7 +279,7 @@ const Sidebar = () => {
 
   return (
     <div className={cn(
-      "bg-[#1A1F36] text-white h-screen fixed left-0 top-0 pt-20 transition-all duration-300",
+      "bg-[#1A1F36] text-white h-screen fixed left-0 top-0 pt-1 transition-all duration-300",
       isOpen ? "w-64" : "w-20"
     )}>
       <SidebarContent />

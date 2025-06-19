@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useQuery } from '@tanstack/react-query';
-import { syncService } from '@/lib/sync';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { Database } from '@/types/supabase';
 
@@ -16,16 +16,17 @@ interface ProductGridProps {
 
 export function ProductGrid({ onAddToCart, onProductsLoaded, shouldRefetch = false }: ProductGridProps) {
   const { storeId } = useAuth();
+  const { getProducts, currentMode } = useUnifiedService();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // Fetch products
+  // Fetch products with mode-aware query key
   const { data: products, isLoading, refetch } = useQuery<Product[]>({
-    queryKey: ['products', storeId],
+    queryKey: ['products', storeId, currentMode],
     queryFn: async () => {
       if (!storeId) return [];
       try {
-        const data = await syncService.getProducts(storeId);
+        const data = await getProducts(storeId);
         return data;
       } catch (error) {
         console.error('Error fetching products:', error);

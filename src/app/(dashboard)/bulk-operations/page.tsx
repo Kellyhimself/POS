@@ -6,7 +6,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { syncService } from '@/lib/sync';
 import { Database } from '@/types/supabase';
 import { exportProductsToCSV, generateStockUpdateTemplate, validateProductCSV, validateStockUpdateCSV, importProductsFromCSV } from '@/lib/bulk-operations/utils';
 import { submitStockUpdateEtimsInvoice } from '@/lib/etims/utils';
@@ -16,6 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -29,6 +29,7 @@ interface ImportProgress {
 
 export default function BulkOperationsPage() {
   const { storeId } = useAuth();
+  const { getProducts, currentMode } = useUnifiedService();
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
@@ -36,11 +37,11 @@ export default function BulkOperationsPage() {
 
   // Fetch products
   const { data: products, isLoading: productsLoading } = useQuery<Product[]>({
-    queryKey: ['products', storeId],
+    queryKey: ['products', storeId, currentMode],
     queryFn: async () => {
       if (!storeId) return [];
       try {
-        const data = await syncService.getProducts(storeId);
+        const data = await getProducts(storeId);
         return data;
       } catch (error) {
         console.error('Error fetching products:', error);
@@ -257,10 +258,12 @@ export default function BulkOperationsPage() {
           for (const update of productUpdates) {
             try {
               // Update stock
-              const { error } = await syncService.updateStockBatch([{
-                product_id: update.product_id,
-                quantity_change: update.quantity_change
-              }]);
+              const { error } = await getProducts(storeId, [
+                {
+                  product_id: update.product_id,
+                  quantity_change: update.quantity_change
+                }
+              ]);
 
               if (error) {
                 throw error;

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { getModeManager } from '@/lib/mode/ModeManager';
 import { getUnifiedService } from '@/lib/services/UnifiedService';
@@ -28,7 +28,11 @@ export interface CreateSaleInput {
 }
 
 export function useUnifiedSales(storeId: string) {
+  console.log('🔄 useUnifiedSales: Hook called with storeId:', storeId);
+  
   const { user } = useAuth();
+  console.log('🔄 useUnifiedSales: User from auth:', user ? 'Authenticated' : 'Not authenticated');
+  
   const [transactions, setTransactions] = useState<Database['public']['Tables']['transactions']['Row'][]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,51 +46,41 @@ export function useUnifiedSales(storeId: string) {
     currentMode: 'online'
   });
 
-  const modeManager = getModeManager();
-  const unifiedService = getUnifiedService(modeManager);
+  console.log('🔄 useUnifiedSales: State initialized', { 
+    transactionsCount: transactions.length, 
+    isLoading, 
+    error, 
+    currentMode 
+  });
 
-  // Listen for mode changes
-  useEffect(() => {
-    const handleModeChange = (event: CustomEvent) => {
-      const newMode = event.detail.mode;
-      setCurrentMode(newMode);
-      setSyncStatus(prev => ({ ...prev, currentMode: newMode }));
-      console.log(`🔄 Sales hook: Mode changed to ${newMode}`);
-    };
+  // Use refs to store singleton instances to prevent recreation
+  const modeManagerRef = useRef<ReturnType<typeof getModeManager> | null>(null);
+  const unifiedServiceRef = useRef<ReturnType<typeof getUnifiedService> | null>(null);
 
-    // Set initial mode
-    setCurrentMode(modeManager.getCurrentMode());
-    setSyncStatus(prev => ({ ...prev, currentMode: modeManager.getCurrentMode() }));
+  // Initialize singletons once
+  if (!modeManagerRef.current) {
+    console.log('🔄 useUnifiedSales: Initializing mode manager');
+    modeManagerRef.current = getModeManager();
+    console.log('✅ useUnifiedSales: Mode manager initialized');
+  }
 
-    window.addEventListener('modeChange', handleModeChange as EventListener);
-    
-    return () => {
-      window.removeEventListener('modeChange', handleModeChange as EventListener);
-    };
-  }, [modeManager]);
+  if (!unifiedServiceRef.current && modeManagerRef.current) {
+    console.log('🔄 useUnifiedSales: Initializing unified service');
+    unifiedServiceRef.current = getUnifiedService(modeManagerRef.current);
+    console.log('✅ useUnifiedSales: Unified service initialized');
+  }
 
-  // Real-time subscriptions (only for online mode)
-  useEffect(() => {
-    if (currentMode === 'online' && storeId) {
-      console.log('🔄 Setting up real-time transaction subscriptions');
-      
-      const channel = unifiedService.subscribeToTransactions(storeId, (payload) => {
-        console.log('🔄 Real-time transaction update:', payload);
-        handleTransactionChange(payload);
-      });
+  const isInitialized = useRef(false);
 
-      return () => {
-        if (channel) {
-          console.log('🔄 Cleaning up real-time transaction subscriptions');
-          // Note: Supabase channel cleanup is handled automatically
-        }
-      };
-    }
-  }, [currentMode, storeId, unifiedService]);
-
-  const handleTransactionChange = useCallback((payload: any) => {
+  // Define handleTransactionChange before using it in useEffect
+  const handleTransactionChange = useCallback((payload: Record<string, unknown>) => {
+    console.log('🔄 useUnifiedSales: Handling transaction change:', payload);
     setTransactions(prevTransactions => {
-      const { eventType, new: newRecord, old: oldRecord } = payload;
+      const { eventType, new: newRecord, old: oldRecord } = payload as {
+        eventType: string;
+        new: Database['public']['Tables']['transactions']['Row'];
+        old: Database['public']['Tables']['transactions']['Row'];
+      };
       
       switch (eventType) {
         case 'INSERT':
@@ -103,15 +97,81 @@ export function useUnifiedSales(storeId: string) {
     });
   }, []);
 
+  // Listen for mode changes
+  useEffect(() => {
+    console.log('🔄 useUnifiedSales: Mode change useEffect running');
+    
+    if (!modeManagerRef.current) {
+      console.log('❌ useUnifiedSales: Mode manager not available');
+      return;
+    }
+
+    const handleModeChange = (event: CustomEvent) => {
+      const newMode = event.detail.mode;
+      console.log('🔄 useUnifiedSales: Mode change event received:', newMode);
+      setCurrentMode(newMode);
+      setSyncStatus(prev => ({ ...prev, currentMode: newMode }));
+      console.log(`🔄 Sales hook: Mode changed to ${newMode}`);
+    };
+
+    // Set initial mode
+    const initialMode = modeManagerRef.current.getCurrentMode();
+    console.log('🔄 useUnifiedSales: Setting initial mode:', initialMode);
+    setCurrentMode(initialMode);
+    setSyncStatus(prev => ({ ...prev, currentMode: initialMode }));
+
+    window.addEventListener('modeChange', handleModeChange as EventListener);
+    console.log('✅ useUnifiedSales: Mode change listener added');
+    
+    return () => {
+      console.log('🔄 useUnifiedSales: Cleaning up mode change listener');
+      window.removeEventListener('modeChange', handleModeChange as EventListener);
+    };
+  }, []); // Empty dependency array since we're using refs
+
+  // Real-time subscriptions (only for online mode)
+  useEffect(() => {
+    console.log('🔄 useUnifiedSales: Real-time subscription useEffect running', { 
+      currentMode, 
+      storeId, 
+      hasUnifiedService: !!unifiedServiceRef.current 
+    });
+    
+    if (currentMode === 'online' && storeId && unifiedServiceRef.current) {
+      console.log('🔄 Setting up real-time transaction subscriptions');
+      
+      // Use a stable callback to prevent subscription recreation
+      const stableCallback = (payload: Record<string, unknown>) => {
+        console.log('🔄 Real-time transaction update:', payload);
+        handleTransactionChange(payload);
+      };
+      
+      const channel = unifiedServiceRef.current.subscribeToTransactions(storeId, stableCallback);
+
+      return () => {
+        if (channel) {
+          console.log('🔄 Cleaning up real-time transaction subscriptions');
+          // Note: Supabase channel cleanup is handled automatically
+        }
+      };
+    }
+  }, [currentMode, storeId, handleTransactionChange]); // Include handleTransactionChange in dependencies
+
   const fetchTransactions = useCallback(async (startDate?: Date, endDate?: Date) => {
-    if (!storeId) return;
+    console.log('🔄 useUnifiedSales: fetchTransactions called', { storeId, currentMode, startDate, endDate });
+    
+    if (!storeId || !unifiedServiceRef.current) {
+      console.log('❌ useUnifiedSales: Cannot fetch transactions - missing storeId or unifiedService');
+      return;
+    }
 
     try {
       setIsLoading(true);
       setError(null);
       console.log(`🔄 Fetching transactions in ${currentMode} mode`);
       
-      const data = await unifiedService.getTransactions(storeId, startDate, endDate);
+      const data = await unifiedServiceRef.current.getTransactions(storeId, startDate, endDate);
+      console.log('✅ useUnifiedSales: Transactions fetched successfully:', data.length);
       setTransactions(data);
       
       setSyncStatus(prev => ({
@@ -123,6 +183,7 @@ export function useUnifiedSales(storeId: string) {
       console.log(`✅ Fetched ${data.length} transactions in ${currentMode} mode`);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch transactions';
+      console.error('❌ useUnifiedSales: Error fetching transactions:', err);
       setError(errorMessage);
       setSyncStatus(prev => ({
         ...prev,
@@ -132,14 +193,18 @@ export function useUnifiedSales(storeId: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [storeId, currentMode, unifiedService]);
+  }, [storeId]); // Remove currentMode from dependencies to prevent recreation
 
   const createSale = useCallback(async (saleData: CreateSaleInput): Promise<Database['public']['Tables']['transactions']['Row']> => {
+    console.log('🔄 useUnifiedSales: createSale called', { saleData });
+    
+    if (!unifiedServiceRef.current) throw new Error('Unified service not initialized');
+
     try {
       setError(null);
       console.log(`🔄 Creating sale in ${currentMode} mode`);
       
-      const result = await unifiedService.createSale(saleData);
+      const result = await unifiedServiceRef.current.createSale(saleData);
       
       // Add to local state (only if not already present from real-time subscription)
       setTransactions(prevTransactions => {
@@ -168,14 +233,18 @@ export function useUnifiedSales(storeId: string) {
       console.error('❌ Error creating sale:', err);
       throw err;
     }
-  }, [currentMode, unifiedService]);
+  }, [currentMode]);
 
-  const submitToETIMS = useCallback(async (invoiceData: any) => {
+  const submitToETIMS = useCallback(async (invoiceData: Record<string, unknown>) => {
+    console.log('🔄 useUnifiedSales: submitToETIMS called', { invoiceData });
+    
+    if (!unifiedServiceRef.current) throw new Error('Unified service not initialized');
+
     try {
       setError(null);
       console.log(`🔄 Submitting to eTIMS in ${currentMode} mode`);
       
-      const result = await unifiedService.submitToETIMS(invoiceData);
+      const result = await unifiedServiceRef.current.submitToETIMS(invoiceData);
       
       setSyncStatus(prev => ({
         ...prev,
@@ -195,14 +264,18 @@ export function useUnifiedSales(storeId: string) {
       console.error('❌ Error submitting to eTIMS:', err);
       throw err;
     }
-  }, [currentMode, unifiedService]);
+  }, [currentMode]);
 
   const getSalesReport = useCallback(async (startDate: Date, endDate: Date) => {
+    console.log('🔄 useUnifiedSales: getSalesReport called', { startDate, endDate });
+    
+    if (!unifiedServiceRef.current) throw new Error('Unified service not initialized');
+
     try {
       setError(null);
       console.log(`🔄 Getting sales report in ${currentMode} mode`);
       
-      const result = await unifiedService.getSalesReport(storeId, startDate, endDate);
+      const result = await unifiedServiceRef.current.getSalesReport(storeId, startDate, endDate);
       
       setSyncStatus(prev => ({
         ...prev,
@@ -221,14 +294,18 @@ export function useUnifiedSales(storeId: string) {
       console.error('❌ Error getting sales report:', err);
       throw err;
     }
-  }, [storeId, currentMode, unifiedService]);
+  }, [storeId, currentMode]);
 
   const getAllSalesReport = useCallback(async (startDate: Date, endDate: Date) => {
+    console.log('🔄 useUnifiedSales: getAllSalesReport called', { startDate, endDate });
+    
+    if (!unifiedServiceRef.current) throw new Error('Unified service not initialized');
+
     try {
       setError(null);
       console.log(`🔄 Getting all sales report in ${currentMode} mode`);
       
-      const result = await unifiedService.getAllSalesReport(storeId, startDate, endDate);
+      const result = await unifiedServiceRef.current.getAllSalesReport(storeId, startDate, endDate);
       
       setSyncStatus(prev => ({
         ...prev,
@@ -247,15 +324,25 @@ export function useUnifiedSales(storeId: string) {
       console.error('❌ Error getting all sales report:', err);
       throw err;
     }
-  }, [storeId, currentMode, unifiedService]);
+  }, [storeId, currentMode]);
 
-  // Initial fetch
+  // Initial fetch - only run once when storeId and user are available
   useEffect(() => {
-    if (storeId && user) {
+    console.log('🔄 useUnifiedSales: Initial fetch useEffect running', { 
+      storeId, 
+      hasUser: !!user, 
+      isInitialized: isInitialized.current 
+    });
+    
+    if (storeId && user && !isInitialized.current) {
+      console.log('🔄 useUnifiedSales: Initializing and fetching transactions');
+      isInitialized.current = true;
       fetchTransactions();
     }
-  }, [storeId, user, fetchTransactions]);
+  }, [storeId, user]); // Removed fetchTransactions from dependencies
 
+  console.log('🔄 useUnifiedSales: Returning hook result');
+  
   return {
     transactions,
     isLoading,
@@ -268,9 +355,9 @@ export function useUnifiedSales(storeId: string) {
     getSalesReport,
     getAllSalesReport,
     // Mode-specific utilities
-    isOnlineMode: unifiedService.isOnlineMode(),
-    isOfflineMode: unifiedService.isOfflineMode(),
-    getPendingSyncCount: unifiedService.getPendingSyncCount.bind(unifiedService),
-    syncPendingData: unifiedService.syncPendingData.bind(unifiedService)
+    isOnlineMode: unifiedServiceRef.current?.isOnlineMode() || false,
+    isOfflineMode: unifiedServiceRef.current?.isOfflineMode() || false,
+    getPendingSyncCount: unifiedServiceRef.current?.getPendingSyncCount.bind(unifiedServiceRef.current) || (() => Promise.resolve(0)),
+    syncPendingData: unifiedServiceRef.current?.syncPendingData.bind(unifiedServiceRef.current) || (() => Promise.resolve())
   };
 } 

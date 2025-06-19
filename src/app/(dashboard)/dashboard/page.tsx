@@ -3,27 +3,66 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
-import { syncService } from '@/lib/sync';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, TrendingUp, Package, AlertTriangle, RefreshCw, ShoppingCart, Receipt, Settings, BarChart3, DollarSign } from 'lucide-react';
-import { useSync } from '@/hooks/useSync';
-import { useGlobalSaleSync } from '@/lib/hooks/useGlobalSaleSync';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import SyncManager from '@/components/etims/SyncQRCode';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 
 const DashboardPage = () => {
   const { storeId, loading, isOnline, user } = useAuth();
+  const { currentMode, getPendingSyncCount, getProducts, getTransactions } = useUnifiedService();
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<Event | null>(null);
   const [isSyncSheetOpen, setIsSyncSheetOpen] = useState(false);
-  const { syncStatus: inventorySyncStatus } = useSync(storeId || '');
-  const syncStatus = useGlobalSaleSync();
+  const [pendingSync, setPendingSync] = useState(0);
   const router = useRouter();
+
+  // Fetch key metrics using unified service
+  const { data: products, isLoading: productsLoading } = useQuery({
+    queryKey: ['products', storeId, currentMode],
+    queryFn: async () => {
+      if (!storeId) return [];
+      return await getProducts(storeId);
+    },
+    enabled: !!storeId,
+  });
+
+  const { data: transactions, isLoading: transactionsLoading } = useQuery({
+    queryKey: ['transactions', storeId, currentMode],
+    queryFn: async () => {
+      if (!storeId) return [];
+      return await getTransactions(storeId);
+    },
+    enabled: !!storeId,
+  });
+
+  // Calculate metrics
+  const lowStockItems = products?.filter(p => p.quantity < 10) || [];
+  const totalProducts = products?.length || 0;
+  const totalValue = products?.reduce((sum, p) => sum + (p.quantity * (p.retail_price || 0)), 0) || 0;
+
+  // Calculate sync progress (simplified for unified approach)
+  const syncProgress = currentMode === 'offline' ? 0 : 100;
+
+  // Fetch pending sync count
+  useEffect(() => {
+    const fetchPendingSync = async () => {
+      try {
+        const count = await getPendingSyncCount();
+        setPendingSync(count);
+      } catch (error) {
+        console.error('Error fetching pending sync count:', error);
+      }
+    };
+
+    fetchPendingSync();
+  }, [getPendingSyncCount, currentMode]);
 
   // Handle PWA installation
   useEffect(() => {
@@ -40,8 +79,10 @@ const DashboardPage = () => {
   const handleInstall = async () => {
     if (!deferredPrompt) return;
     
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
+    // Type assertion for PWA install prompt
+    const prompt = deferredPrompt as any;
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice;
     
     if (outcome === 'accepted') {
       setShowInstallPrompt(false);
@@ -49,43 +90,13 @@ const DashboardPage = () => {
     setDeferredPrompt(null);
   };
 
-  // Fetch key metrics
-  const { data: products, isLoading: productsLoading } = useQuery({
-    queryKey: ['products', storeId],
-    queryFn: async () => {
-      if (!storeId) return [];
-      return await syncService.getProducts(storeId);
-    },
-    enabled: !!storeId,
-  });
-
-  const { data: transactions, isLoading: transactionsLoading } = useQuery({
-    queryKey: ['transactions', storeId],
-    queryFn: async () => {
-      if (!storeId) return [];
-      return await syncService.getTransactions(storeId);
-    },
-    enabled: !!storeId,
-  });
-
-  // Calculate metrics
-  const lowStockItems = products?.filter(p => p.quantity < 10) || [];
-  const totalProducts = products?.length || 0;
-  const totalValue = products?.reduce((sum, p) => sum + (p.quantity * (p.retail_price || 0)), 0) || 0;
-  const pendingSync = inventorySyncStatus?.pendingSync || 0;
-
-  // Calculate sync progress
-  const syncProgress = syncStatus.totalItems > 0 
-    ? (syncStatus.currentItem / syncStatus.totalItems) * 100 
-    : 0;
-
   if (loading) return <div>Loading auth state...</div>;
   if (!storeId) return <div>No store assigned. Please contact your administrator.</div>;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       {/* PWA Install Prompt */}
-      {deferredPrompt && (
+      {showInstallPrompt && deferredPrompt && (
         <div className="fixed bottom-4 right-4 z-50 w-full max-w-sm sm:max-w-md">
           <Card className="bg-white dark:bg-gray-800 shadow-lg border-0">
             <CardHeader className="pb-2">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Database } from '@/types/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,10 +8,12 @@ import {
   DialogTrigger,
   DialogTitle
 } from '@/components/ui/dialog';
-import { X, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { saveOfflineSupplier, db, updateOfflineProductPrice } from '@/lib/db';
+import { saveOfflineSupplier, db } from '@/lib/db';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
+import { useSettings } from '@/components/providers/SettingsProvider';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -53,6 +55,42 @@ export default function AddStockDialog({
   const [costPrice, setCostPrice] = useState(product.cost_price);
   const [retailPrice, setRetailPrice] = useState(product.retail_price ?? 0);
   const [wholesalePrice, setWholesalePrice] = useState(product.wholesale_price ?? 0);
+  const { isOnlineMode, updateProduct } = useUnifiedService();
+  const { settings } = useSettings();
+
+  // Helper function to round to 2 decimal places
+  const roundToTwoDecimals = (value: number): number => {
+    return Math.round(value * 100) / 100;
+  };
+
+  // Helper function to calculate VAT amount based on inclusion status using VAT standards
+  const calculateVatAmount = (baseAmount: number, isVatIncluded: boolean): number => {
+    if (isVatIncluded) {
+      // If VAT is included, extract VAT from total amount
+      // Use the VAT settings to get the correct rate
+      const vatRate = settings?.default_vat_rate ?? 16;
+      const basePrice = baseAmount / (1 + vatRate / 100);
+      return roundToTwoDecimals(baseAmount - basePrice);
+    } else {
+      // If VAT is not included, calculate VAT on base amount
+      const vatRate = settings?.default_vat_rate ?? 16;
+      return roundToTwoDecimals(baseAmount * (vatRate / 100));
+    }
+  };
+
+  // Recalculate VAT amount when packs or cost price changes
+  useEffect(() => {
+    if (numberOfPacks && costPrice) {
+      const totalQuantity = Number(numberOfPacks) * product.units_per_pack;
+      const totalAmount = costPrice * totalQuantity;
+      const calculatedVatAmount = calculateVatAmount(totalAmount, purchaseDetails.is_vat_included);
+      
+      setPurchaseDetails(prev => ({
+        ...prev,
+        input_vat_amount: calculatedVatAmount
+      }));
+    }
+  }, [numberOfPacks, costPrice, purchaseDetails.is_vat_included, product.units_per_pack, settings?.default_vat_rate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,8 +107,10 @@ export default function AddStockDialog({
     setIsLoading(true);
     try {
       let supplierId: string | null = null;
-      // Check and save supplier if needed
-      if (purchaseDetails.supplier_name || purchaseDetails.supplier_vat_no) {
+      
+      // Only handle supplier creation in offline mode
+      // In online mode, let the OnlineService handle supplier creation
+      if (!isOnlineMode && (purchaseDetails.supplier_name || purchaseDetails.supplier_vat_no)) {
         let supplier = null;
         if (purchaseDetails.supplier_vat_no) {
           supplier = await db.suppliers.where('vat_no').equals(purchaseDetails.supplier_vat_no).first();
@@ -89,19 +129,31 @@ export default function AddStockDialog({
           supplierId = supplier.id;
         }
       }
-      // Update prices offline-first if changed
+      
+      // Update product prices if changed - use UnifiedService for both online and offline modes
+      const priceUpdates: Partial<Database['public']['Tables']['products']['Update']> = {};
+      let hasPriceChanges = false;
+      
       if (costPrice !== product.cost_price) {
-        await updateOfflineProductPrice(product.id, 'cost_price', costPrice);
+        priceUpdates.cost_price = costPrice;
+        hasPriceChanges = true;
       }
       if (retailPrice !== (product.retail_price ?? 0)) {
-        await updateOfflineProductPrice(product.id, 'retail_price', retailPrice);
+        priceUpdates.retail_price = retailPrice;
+        hasPriceChanges = true;
       }
       if (wholesalePrice !== (product.wholesale_price ?? 0)) {
-        await updateOfflineProductPrice(product.id, 'wholesale_price', wholesalePrice);
+        priceUpdates.wholesale_price = wholesalePrice;
+        hasPriceChanges = true;
       }
-      const kenyaTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' });
-      const kenyaDate = new Date(kenyaTime);
-      const timestampISO = kenyaDate.toISOString();
+      
+      // Update prices if there are changes
+      if (hasPriceChanges) {
+        console.log('🔄 AddStockDialog: Updating product prices:', priceUpdates);
+        await updateProduct(product.id, priceUpdates);
+        console.log('✅ AddStockDialog: Product prices updated successfully');
+      }
+      
       await onAddStock({
         product: {
           ...product,
@@ -112,7 +164,7 @@ export default function AddStockDialog({
         numberOfPacks: packsNum,
         purchaseDetails: {
           ...purchaseDetails,
-          supplier_id: supplierId,
+          supplier_id: supplierId || undefined,
         }
       });
       setNumberOfPacks('');
@@ -120,6 +172,7 @@ export default function AddStockDialog({
         description: `Successfully added ${packsNum * product.units_per_pack} units (${packsNum} packs) to ${product.name}`,
         position: 'top-center',
       });
+      // Call onSuccess callback if provided
       onSuccess?.();
       setIsOpen(false);
     } catch (error) {
@@ -287,16 +340,21 @@ export default function AddStockDialog({
                   />
                 </div>
                 <div>
-                  <label htmlFor="is_vat_included" className="text-xs font-medium text-gray-300">Is VAT Included? *</label>
+                  <label htmlFor="is_vat_included" className="text-xs font-medium text-gray-300">VAT Included in cost price? *</label>
                   <select
                     id="is_vat_included"
                     value={purchaseDetails.is_vat_included ? 'yes' : 'no'}
                     onChange={e => {
                       const isVat = e.target.value === 'yes';
+                      const totalQuantity = Number(numberOfPacks) * product.units_per_pack;
+                      const totalAmount = costPrice * totalQuantity;
+                      
+                      const calculatedVatAmount = calculateVatAmount(totalAmount, isVat);
+                      
                       setPurchaseDetails(prev => ({
                         ...prev,
                         is_vat_included: isVat,
-                        input_vat_amount: isVat ? product.cost_price * Number(numberOfPacks) * product.units_per_pack * 0.16 : prev.input_vat_amount
+                        input_vat_amount: calculatedVatAmount
                       }));
                     }}
                     className="w-full h-7 text-xs rounded-md border border-[#3A3A3A] bg-[#2D3748] text-gray-200 px-2 focus:ring-green-600 focus:border-green-600"
@@ -306,16 +364,28 @@ export default function AddStockDialog({
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="input_vat_amount" className="text-xs font-medium text-gray-300">Input VAT Amount (Manual) *</label>
+                  <label htmlFor="input_vat_amount" className="text-xs font-medium text-gray-300">Input VAT Amount (KES) *</label>
                   <Input
                     id="input_vat_amount"
                     type="number"
                     min="0"
                     step="0.01"
-                    value={purchaseDetails.input_vat_amount}
-                    onChange={e => setPurchaseDetails(prev => ({ ...prev, input_vat_amount: parseFloat(e.target.value) }))}
+                    value={purchaseDetails.input_vat_amount.toFixed(2)}
+                    onChange={e => {
+                      const value = parseFloat(e.target.value) || 0;
+                      setPurchaseDetails(prev => ({ 
+                        ...prev, 
+                        input_vat_amount: roundToTwoDecimals(value)
+                      }));
+                    }}
                     className="h-7 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
                   />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {purchaseDetails.is_vat_included 
+                      ? `VAT included in total amount of KES ${(costPrice * Number(numberOfPacks) * product.units_per_pack).toFixed(2)}`
+                      : `VAT calculated on base amount of KES ${(costPrice * Number(numberOfPacks) * product.units_per_pack).toFixed(2)}`
+                    }
+                  </p>
                 </div>
               </div>
             </div>

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
@@ -27,10 +26,7 @@ interface CartProps {
   onCheckout: () => void;
   paymentMethod: PaymentMethod;
   onPaymentMethodChange: (method: PaymentMethod) => void;
-  vatEnabled: boolean;
   onVatToggle: (enabled: boolean) => void;
-  phone: string;
-  onPhoneChange: (phone: string) => void;
   isProcessing?: boolean;
   discountType: 'percentage' | 'cash' | null;
   discountValue: number;
@@ -45,38 +41,35 @@ export function Cart({
   onCheckout,
   paymentMethod,
   onPaymentMethodChange,
-  vatEnabled,
   onVatToggle,
-  phone,
-  onPhoneChange,
   isProcessing = false,
   discountType,
   discountValue,
   onDiscountTypeChange,
   onDiscountValueChange,
 }: CartProps) {
-  const { calculatePrice } = useVatSettings();
+  const { calculatePrice, calculateVatAmount, isVatEnabled } = useVatSettings();
   
+  // Calculate subtotal using dynamically calculated display prices
   const subtotal = items.reduce((sum, item) => {
-    return sum + (item.price * item.quantity);
+    const dynamicDisplayPrice = calculatePrice(item.price, item.product.vat_status ?? false);
+    return sum + (dynamicDisplayPrice * item.quantity);
   }, 0);
   
-  // Calculate discount
+  // Calculate discount based on subtotal
   const discountAmount = discountType === 'percentage' 
     ? (subtotal * (discountValue / 100))
     : discountType === 'cash' 
       ? Math.min(discountValue, subtotal) // Ensure discount doesn't exceed subtotal
       : 0;
   
-  const total = items.reduce((sum, item) => {
-    const priceWithVat = calculatePrice(item.price, item.product.vat_status ?? false);
-    return sum + (priceWithVat * item.quantity);
-  }, 0) - discountAmount;
+  // Calculate total (subtotal minus discount)
+  const total = subtotal - discountAmount;
 
-  // Calculate VAT total for display
+  // Calculate VAT total for display (only if VAT is enabled) - DYNAMICALLY
   const vatTotal = items.reduce((sum, item) => {
-    const priceWithVat = calculatePrice(item.price, item.product.vat_status ?? false);
-    const vatAmount = priceWithVat - item.price;
+    // Calculate VAT dynamically based on current VAT toggle state
+    const vatAmount = calculateVatAmount(item.price, item.product.vat_status ?? false);
     return sum + (vatAmount * item.quantity);
   }, 0);
 
@@ -88,60 +81,67 @@ export function Cart({
           <p className="text-sm text-gray-500 text-center py-2">No items in cart</p>
         ) : (
           <div className="space-y-1">
-            {items.map((item, index) => (
-              <div key={item.product.id + '-' + index} className="bg-white rounded-lg shadow p-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-900 truncate">{item.product.name}</p>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onRemoveItem(index)}
-                      className="h-5 w-5 p-0 text-gray-500 hover:text-gray-700"
-                    >
-                      ✕
-                    </Button>
+            {items.map((item, index) => {
+              // Calculate display price and VAT amount dynamically for each item
+              const dynamicDisplayPrice = calculatePrice(item.price, item.product.vat_status ?? false);
+              const dynamicVatAmount = calculateVatAmount(item.price, item.product.vat_status ?? false);
+              
+              return (
+                <div key={item.product.id + '-' + index} className="bg-white rounded-lg shadow p-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-900 truncate">{item.product.name}</p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onRemoveItem(index)}
+                        className="h-5 w-5 p-0 text-gray-500 hover:text-gray-700"
+                      >
+                        ✕
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                  <div className="space-y-0.5">
-                    <p className="text-xs text-gray-600">
-                      {item.saleMode === 'wholesale' ? 'Wholesale:' : 'Retail:'} KES {item.displayPrice?.toFixed(2) || item.price.toFixed(2)}
-                    </p>
-                    {item.vat_amount > 0 && (
-                      <p className="text-xs text-gray-500">
-                        VAT: KES {item.vat_amount.toFixed(2)}
+                  <div className="flex items-center justify-between mt-1">
+                    <div className="space-y-0.5">
+                      <p className="text-xs text-gray-600">
+                        {item.saleMode === 'wholesale' ? 'Wholesale:' : 'Retail:'} KES {dynamicDisplayPrice.toFixed(2)}
                       </p>
-                    )}
+                      {/* Only show VAT if it's enabled and amount > 0 */}
+                      {isVatEnabled && dynamicVatAmount > 0 && (
+                        <p className="text-xs text-gray-500">
+                          VAT: KES {dynamicVatAmount.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onQuantityChange(index, item.quantity - 1)}
+                        disabled={item.quantity <= 1}
+                        className="h-5 w-5 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
+                      >
+                        -
+                      </Button>
+                      <span className="w-5 text-center text-xs font-medium text-gray-900">{item.quantity}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onQuantityChange(index, item.quantity + 1)}
+                        className="h-5 w-5 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
+                      >
+                        +
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onQuantityChange(index, item.quantity - 1)}
-                      disabled={item.quantity <= 1}
-                      className="h-5 w-5 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
-                    >
-                      -
-                    </Button>
-                    <span className="w-5 text-center text-xs font-medium text-gray-900">{item.quantity}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onQuantityChange(index, item.quantity + 1)}
-                      className="h-5 w-5 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
-                    >
-                      +
-                    </Button>
+                  <div className="mt-1 text-right">
+                    <p className="text-xs font-medium text-gray-900">
+                      Total: KES {(dynamicDisplayPrice * item.quantity).toFixed(2)}
+                    </p>
                   </div>
                 </div>
-                <div className="mt-1 text-right">
-                  <p className="text-xs font-medium text-gray-900">
-                    Total: KES {((item.displayPrice || item.price) * item.quantity).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -152,10 +152,13 @@ export function Cart({
             <span className="text-gray-600">Subtotal:</span>
             <span className="font-medium text-gray-900">KES {subtotal.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-600">VAT:</span>
-            <span className="font-medium text-gray-900">KES {vatTotal.toFixed(2)}</span>
-          </div>
+          {/* Only show VAT line if VAT is enabled and there's VAT to show */}
+          {isVatEnabled && vatTotal > 0 && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-600">VAT:</span>
+              <span className="font-medium text-gray-900">KES {vatTotal.toFixed(2)}</span>
+            </div>
+          )}
           
           {/* Discount Section */}
           <div className="space-y-2 pt-2 border-t border-gray-200">
@@ -203,7 +206,7 @@ export function Cart({
           <div className="flex items-center space-x-2">
             <Switch
               id="vat"
-              checked={vatEnabled}
+              checked={isVatEnabled}
               onCheckedChange={onVatToggle}
               className="data-[state=checked]:bg-[#0ABAB5]"
             />

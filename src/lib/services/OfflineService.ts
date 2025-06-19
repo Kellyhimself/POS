@@ -8,9 +8,18 @@ import {
   db,
   saveOfflineETIMSSubmission,
   getSalesReport,
-  getAllSalesReport
+  getAllSalesReport,
+  saveOfflinePurchase,
+  OfflinePurchase,
+  OfflinePurchaseItem
 } from '@/lib/db/index';
 import { Database } from '@/types/supabase';
+
+interface AppSettings {
+  enable_vat_toggle_on_pos: boolean;
+  vat_pricing_model: 'inclusive' | 'exclusive';
+  default_vat_rate: number;
+}
 
 export interface SaleInput {
   store_id: string;
@@ -43,18 +52,43 @@ export interface CreateProductInput {
   input_vat_amount?: number;
 }
 
+export interface PurchaseInput {
+  store_id: string;
+  supplier_id?: string;
+  supplier_name: string;
+  invoice_number: string;
+  supplier_vat_no: string;
+  is_vat_included: boolean;
+  input_vat_amount: number;
+  total_amount: number;
+  date: string;
+  notes?: string;
+  items: Array<{
+    product_id: string;
+    quantity: number;
+    unit_cost: number;
+    vat_amount: number;
+  }>;
+}
+
 export class OfflineService {
   // Product operations
   async getProducts(storeId: string): Promise<Database['public']['Tables']['products']['Row'][]> {
     try {
+      console.log('🔄 OfflineService.getProducts: Fetching products for store:', storeId);
       const products = await getCachedProducts(storeId);
-      return products.map(product => ({
+      const mappedProducts = products.map(product => ({
         ...product,
         // Remove offline-specific fields
         synced: undefined
       }));
+      console.log('✅ OfflineService.getProducts: Returning products:', mappedProducts.length, 'products');
+      console.log('📊 OfflineService.getProducts: Product quantities:', 
+        mappedProducts.map(p => ({ id: p.id, name: p.name, quantity: p.quantity }))
+      );
+      return mappedProducts;
     } catch (error) {
-      console.error('Error fetching offline products:', error);
+      console.error('❌ OfflineService.getProducts: Error fetching offline products:', error);
       throw error;
     }
   }
@@ -123,7 +157,14 @@ export class OfflineService {
   // Sale operations
   async createSale(saleData: SaleInput): Promise<Database['public']['Tables']['transactions']['Row']> {
     try {
-      // Convert to offline sale format
+      console.log('🔄 OfflineService: Creating sale:', {
+        store_id: saleData.store_id,
+        product_count: saleData.products.length,
+        total_amount: saleData.total_amount,
+        vat_total: saleData.vat_total
+      });
+
+      // Convert to offline sale format and save
       const offlineSale = await saveOfflineSale({
         store_id: saleData.store_id,
         products: saleData.products.map(p => ({
@@ -137,17 +178,22 @@ export class OfflineService {
         vat_total: saleData.vat_total
       });
 
-      // Return in online format
+      console.log('✅ OfflineService: Sale created successfully:', {
+        sale_id: offlineSale.id,
+        items_count: offlineSale.items.length
+      });
+
+      // Return in online format - match the current database schema
       return {
         id: offlineSale.id,
         store_id: saleData.store_id,
-        user_id: saleData.user_id,
+        product_id: null, // Multi-product sale, no single product_id
+        quantity: saleData.products.reduce((sum, p) => sum + p.quantity, 0),
         total: saleData.total_amount,
         vat_amount: saleData.vat_total,
         payment_method: saleData.payment_method,
         timestamp: new Date().toISOString(),
-        synced: false,
-        created_at: new Date().toISOString()
+        synced: false
       } as Database['public']['Tables']['transactions']['Row'];
     } catch (error) {
       console.error('Error creating offline sale:', error);
@@ -167,22 +213,22 @@ export class OfflineService {
       let filteredTransactions = transactions;
       if (startDate && endDate) {
         filteredTransactions = transactions.filter(t => {
-          const transactionDate = new Date(t.created_at);
+          const transactionDate = new Date(t.timestamp);
           return transactionDate >= startDate && transactionDate <= endDate;
         });
       }
 
-      // Convert to online format
+      // Convert to online format - match the current database schema
       return filteredTransactions.map(t => ({
         id: t.id,
         store_id: t.store_id,
-        user_id: '', // Offline doesn't track user_id
+        product_id: null, // Offline doesn't track individual products in transactions
+        quantity: 0, // Will be calculated from sale_items
         total: t.total_amount,
         vat_amount: t.vat_total,
         payment_method: t.payment_method,
         timestamp: t.timestamp,
-        synced: t.synced,
-        created_at: t.created_at
+        synced: t.synced
       })) as Database['public']['Tables']['transactions']['Row'][];
     } catch (error) {
       console.error('Error fetching offline transactions:', error);
@@ -222,6 +268,7 @@ export class OfflineService {
   // eTIMS operations
   async submitToETIMS(invoiceData: any): Promise<any> {
     try {
+      // Save to offline storage for later sync
       const submission = await saveOfflineETIMSSubmission({
         store_id: invoiceData.store_id,
         invoice_number: invoiceData.invoice_number,
@@ -231,14 +278,126 @@ export class OfflineService {
         submission_type: 'invoice'
       });
 
-      return {
-        id: submission.id,
-        status: 'pending',
-        synced: false
-      };
+      return submission;
     } catch (error) {
-      console.error('Error submitting offline eTIMS:', error);
+      console.error('Error saving offline ETIMS submission:', error);
       throw error;
+    }
+  }
+
+  async getPendingETIMSSubmissions(storeId: string): Promise<Record<string, unknown>[]> {
+    try {
+      const submissions = await db.etims_submissions
+        .where('store_id')
+        .equals(storeId)
+        .and(submission => submission.status === 'pending')
+        .toArray();
+
+      return submissions;
+    } catch (error) {
+      console.error('Error fetching offline ETIMS submissions:', error);
+      throw error;
+    }
+  }
+
+  async getInputVatSubmissions(storeId: string, startDate: Date, endDate: Date): Promise<Record<string, unknown>[]> {
+    try {
+      console.log('🔍 OfflineService: Fetching input VAT from purchases:', {
+        storeId,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
+      });
+
+      const purchases = await db.purchases
+        .where('store_id')
+        .equals(storeId)
+        .and(purchase => {
+          if (purchase.input_vat_amount <= 0) return false;
+          
+          const purchaseDate = new Date(purchase.date);
+          return purchaseDate >= startDate && purchaseDate <= endDate;
+        })
+        .toArray();
+
+      // Get purchase items for each purchase
+      const purchasesWithItems = await Promise.all(
+        purchases.map(async (purchase) => {
+          const items = await db.purchase_items
+            .where('purchase_id')
+            .equals(purchase.id)
+            .toArray();
+
+          // Get product details for each item
+          const itemsWithProducts = await Promise.all(
+            items.map(async (item) => {
+              const product = await db.products.get(item.product_id);
+              return {
+                ...item,
+                products: product || {
+                  name: 'Unknown Product',
+                  sku: null,
+                  category: null,
+                  cost_price: 0,
+                  vat_status: false
+                }
+              };
+            })
+          );
+
+          return {
+            ...purchase,
+            purchase_items: itemsWithProducts
+          };
+        })
+      );
+
+      console.log('🔍 OfflineService: Input VAT purchases found:', {
+        count: purchasesWithItems.length,
+        purchases: purchasesWithItems.map(p => ({
+          id: p.id,
+          invoice_number: p.invoice_number,
+          date: p.date,
+          input_vat_amount: p.input_vat_amount,
+          total_amount: p.total_amount
+        }))
+      });
+
+      return purchasesWithItems;
+    } catch (error) {
+      console.error('Error fetching offline input VAT from purchases:', error);
+      return [];
+    }
+  }
+
+  async syncPendingETIMSSubmissions(storeId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const pendingSubmissions = await this.getPendingETIMSSubmissions(storeId);
+      
+      for (const submission of pendingSubmissions) {
+        try {
+          // Submit to KRA eTIMS API
+          const response = await fetch('/api/etims/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              invoiceData: submission.data,
+              store_id: storeId 
+            })
+          });
+
+          if (response.ok) {
+            // Mark as synced
+            await db.etims_submissions.update(submission.id, { status: 'synced' });
+          }
+        } catch (error) {
+          console.error('Error syncing ETIMS submission:', error);
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error in offline ETIMS sync:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
@@ -257,6 +416,99 @@ export class OfflineService {
       return await getAllSalesReport(storeId, startDate, endDate);
     } catch (error) {
       console.error('Error getting offline all sales report:', error);
+      throw error;
+    }
+  }
+
+  // Purchase operations
+  async getPurchases(storeId: string, startDate?: Date, endDate?: Date): Promise<Array<OfflinePurchase & { items: OfflinePurchaseItem[]; supplier_name?: string }>> {
+    try {
+      // Get all purchases from offline storage
+      const purchases = await db.purchases
+        .where('store_id')
+        .equals(storeId)
+        .toArray();
+
+      // Filter by date if provided
+      let filteredPurchases = purchases;
+      if (startDate && endDate) {
+        // Convert dates to YYYY-MM-DD format for comparison
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+        
+        filteredPurchases = purchases.filter(p => {
+          // Extract date part from purchase date (remove time and timezone)
+          const purchaseDateStr = p.date.split('T')[0];
+          return purchaseDateStr >= startDateStr && purchaseDateStr <= endDateStr;
+        });
+      }
+
+      // Get items and supplier names for each purchase
+      const purchasesWithItems = await Promise.all(
+        filteredPurchases.map(async (purchase) => {
+          const items = await db.purchase_items.where('purchase_id').equals(purchase.id).toArray();
+          
+          // Get supplier name
+          let supplier_name = '';
+          if (purchase.supplier_id) {
+            const supplier = await db.suppliers?.get(purchase.supplier_id);
+            supplier_name = supplier?.name || '';
+          }
+          // Fallback to purchase.supplier_name if no supplier_id
+          if (!supplier_name && purchase.supplier_name) {
+            supplier_name = purchase.supplier_name;
+          }
+
+          return { ...purchase, items, supplier_name };
+        })
+      );
+
+      return purchasesWithItems;
+    } catch (error) {
+      console.error('Error fetching offline purchases:', error);
+      throw error;
+    }
+  }
+
+  async createPurchase(purchaseData: PurchaseInput): Promise<OfflinePurchase & { items: OfflinePurchaseItem[] }> {
+    try {
+      console.log('🔄 OfflineService: Creating purchase:', {
+        store_id: purchaseData.store_id,
+        supplier_name: purchaseData.supplier_name,
+        total_amount: purchaseData.total_amount,
+        items_count: purchaseData.items.length
+      });
+
+      // Convert to offline purchase format and save
+      const offlinePurchase = await saveOfflinePurchase(
+        {
+          store_id: purchaseData.store_id,
+          supplier_id: purchaseData.supplier_id || null,
+          supplier_name: purchaseData.supplier_name,
+          invoice_number: purchaseData.invoice_number,
+          supplier_vat_no: purchaseData.supplier_vat_no,
+          is_vat_included: purchaseData.is_vat_included,
+          input_vat_amount: purchaseData.input_vat_amount,
+          total_amount: purchaseData.total_amount,
+          date: purchaseData.date,
+          notes: purchaseData.notes || '',
+        },
+        purchaseData.items.map(item => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+          unit_cost: item.unit_cost,
+          vat_amount: item.vat_amount,
+        }))
+      );
+
+      console.log('✅ OfflineService: Purchase created successfully:', {
+        purchase_id: offlinePurchase.id,
+        items_count: offlinePurchase.items.length
+      });
+
+      return offlinePurchase;
+    } catch (error) {
+      console.error('Error creating offline purchase:', error);
       throw error;
     }
   }
@@ -293,6 +545,64 @@ export class OfflineService {
     } catch (error) {
       console.error('Offline service health check failed:', error);
       return false;
+    }
+  }
+
+  async getAppSettings(): Promise<AppSettings> {
+    try {
+      const settings = await db.app_settings.get('global');
+      if (settings) {
+        return settings;
+      }
+      
+      // If no settings found, return default settings
+      console.log('⚠️ No app settings found in offline database, using defaults');
+      const defaultSettings: AppSettings = {
+        enable_vat_toggle_on_pos: true,
+        vat_pricing_model: 'exclusive',
+        default_vat_rate: 16
+      };
+      
+      // Save default settings to database for future use
+      await db.app_settings.put({
+        id: 'global',
+        ...defaultSettings,
+        enable_etims_integration: false,
+        synced: false,
+        updated_at: new Date().toISOString()
+      });
+      
+      return defaultSettings;
+    } catch (error) {
+      console.error('Error fetching offline app settings:', error);
+      // Return default settings even if there's an error
+      console.log('⚠️ Error fetching app settings, using defaults');
+      return {
+        enable_vat_toggle_on_pos: true,
+        vat_pricing_model: 'exclusive',
+        default_vat_rate: 16
+      };
+    }
+  }
+
+  async updateAppSettings(settings: Partial<AppSettings>): Promise<void> {
+    try {
+      const current = await db.app_settings.get('global');
+      const updatedSettings = {
+        id: 'global',
+        enable_vat_toggle_on_pos: true,
+        vat_pricing_model: 'exclusive' as const,
+        default_vat_rate: 16,
+        enable_etims_integration: false,
+        synced: false,
+        updated_at: new Date().toISOString(),
+        ...current,
+        ...settings
+      };
+      await db.app_settings.put(updatedSettings);
+    } catch (error) {
+      console.error('Error updating offline app settings:', error);
+      throw error;
     }
   }
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAppSettingsSync } from '@/hooks/useAppSettingsSync';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { Switch } from '@headlessui/react';
 import { toast } from 'react-hot-toast';
 
@@ -10,7 +10,7 @@ interface VatSettings {
 }
 
 export function VatSettings() {
-  const { loadSettings, updateSettings } = useAppSettingsSync();
+  const { getAppSettings, updateAppSettings } = useUnifiedService();
   const [isLoading, setIsLoading] = useState(true);
   const [settings, setSettings] = useState<VatSettings>({
     enable_vat_toggle_on_pos: true,
@@ -19,7 +19,7 @@ export function VatSettings() {
   });
 
   useEffect(() => {
-    loadSettings().then((appSettings) => {
+    getAppSettings().then((appSettings) => {
       if (appSettings) {
         setSettings({
           enable_vat_toggle_on_pos: appSettings.enable_vat_toggle_on_pos,
@@ -34,7 +34,7 @@ export function VatSettings() {
   const handleSave = async () => {
     try {
       setIsLoading(true);
-      await updateSettings(settings);
+      await updateAppSettings(settings);
       toast.success('Settings updated successfully');
     } catch (error) {
       console.error('Error updating settings:', error);

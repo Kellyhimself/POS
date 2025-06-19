@@ -2,13 +2,6 @@ import { useSettings } from '@/components/providers/SettingsProvider';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useState, useEffect } from 'react';
 
-interface VatSettings {
-  enableVatToggle: boolean;
-  vatPricingModel: 'inclusive' | 'exclusive';
-  defaultVatRate: number;
-  isVatEnabled: boolean;
-}
-
 export function useVatSettings() {
   const { settings } = useSettings();
   const { user } = useAuth();
@@ -30,37 +23,83 @@ export function useVatSettings() {
     }
   }, [settings]);
 
-  // Calculate price with/without VAT
+  // Calculate price to display/charge to customer
   const calculatePrice = (basePrice: number, isVatable: boolean) => {
-    if (!settings) return basePrice;
+    // Safety check for invalid basePrice
+    if (typeof basePrice !== 'number' || isNaN(basePrice)) {
+      console.warn('⚠️ Invalid basePrice provided to calculatePrice:', basePrice);
+      return 0;
+    }
 
-    if (!isVatEnabled || !isVatable) {
-      if (settings.vat_pricing_model === 'inclusive') {
-        // If price includes VAT, remove it
-        return basePrice / (1 + settings.default_vat_rate / 100);
-      }
+    if (!settings) {
+      console.log('📱 No settings available, returning base price:', basePrice);
       return basePrice;
     }
 
-    if (settings.vat_pricing_model === 'exclusive') {
-      // Add VAT to base price
-      return basePrice * (1 + settings.default_vat_rate / 100);
+    // If VAT is disabled
+    if (!isVatEnabled || !isVatable) {
+      if (settings.vat_pricing_model === 'inclusive') {
+        // Price is stored inclusive of VAT, so deduct VAT for display
+        const vatRate = settings.default_vat_rate || 16;
+        return basePrice / (1 + vatRate / 100);
+      } else {
+        // Price is stored exclusive of VAT, so return as-is
+        return basePrice;
+      }
     }
 
-    return basePrice;
+    // If VAT is enabled
+    if (settings.vat_pricing_model === 'inclusive') {
+      // Price is stored inclusive of VAT, so return as-is
+      return basePrice;
+    } else {
+      // Price is stored exclusive of VAT, so add VAT
+      const vatRate = settings.default_vat_rate || 16;
+      return basePrice * (1 + vatRate / 100);
+    }
   };
 
-  // Calculate VAT amount
+  // Calculate VAT amount for the given price
   const calculateVatAmount = (price: number, isVatable: boolean) => {
+    // Safety check for invalid price
+    if (typeof price !== 'number' || isNaN(price)) {
+      console.warn('⚠️ Invalid price provided to calculateVatAmount:', price);
+      return 0;
+    }
+
     if (!settings || !isVatEnabled || !isVatable) return 0;
+
+    const vatRate = settings.default_vat_rate || 16;
 
     if (settings.vat_pricing_model === 'inclusive') {
       // Extract VAT from inclusive price
-      return price - (price / (1 + settings.default_vat_rate / 100));
+      const baseAmount = price / (1 + vatRate / 100);
+      return price - baseAmount;
+    } else {
+      // Calculate VAT for exclusive price
+      return price * (vatRate / 100);
+    }
+  };
+
+  // Get base price (without VAT) - used for accounting purposes
+  const getBasePrice = (price: number, isVatable: boolean) => {
+    // Safety check for invalid price
+    if (typeof price !== 'number' || isNaN(price)) {
+      console.warn('⚠️ Invalid price provided to getBasePrice:', price);
+      return 0;
     }
 
-    // Calculate VAT for exclusive price
-    return price * (settings.default_vat_rate / 100);
+    if (!settings || !isVatEnabled || !isVatable) return price;
+
+    const vatRate = settings.default_vat_rate || 16;
+
+    if (settings.vat_pricing_model === 'inclusive') {
+      // Extract base price from inclusive price
+      return price / (1 + vatRate / 100);
+    } else {
+      // Price is already base price
+      return price;
+    }
   };
 
   // Toggle VAT for current transaction (only works if global toggle is enabled)
@@ -96,6 +135,7 @@ export function useVatSettings() {
     toggleVat,
     canToggleVat,
     calculatePrice,
-    calculateVatAmount
+    calculateVatAmount,
+    getBasePrice
   };
 } 

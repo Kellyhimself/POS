@@ -1,39 +1,37 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useAppSettingsSync } from '@/hooks/useAppSettingsSync';
-import { useAuth } from './AuthProvider';
+import { useUnifiedService } from './UnifiedServiceProvider';
+
+interface AppSettings {
+  enable_vat_toggle_on_pos: boolean;
+  vat_pricing_model: 'inclusive' | 'exclusive';
+  default_vat_rate: number;
+}
 
 interface SettingsContextType {
-  settings: {
-    enable_vat_toggle_on_pos: boolean;
-    vat_pricing_model: 'inclusive' | 'exclusive';
-    default_vat_rate: number;
-  } | null;
+  settings: AppSettings | null;
   isLoading: boolean;
   isSyncing: boolean;
   lastSynced: Date | null;
-  updateSettings: (settings: Partial<{
-    enable_vat_toggle_on_pos: boolean;
-    vat_pricing_model: 'inclusive' | 'exclusive';
-    default_vat_rate: number;
-  }>) => Promise<void>;
+  updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
   syncSettings: () => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const { isOnline } = useAuth();
-  const { loadSettings, updateSettings, syncSettings, isSyncing, lastSynced } = useAppSettingsSync();
-  const [settings, setSettings] = useState<SettingsContextType['settings']>(null);
+  const { getAppSettings, updateAppSettings } = useUnifiedService();
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
 
   useEffect(() => {
     const initializeSettings = async () => {
       setIsLoading(true);
       try {
-        const loadedSettings = await loadSettings();
+        const loadedSettings = await getAppSettings();
         if (loadedSettings) {
           setSettings({
             enable_vat_toggle_on_pos: loadedSettings.enable_vat_toggle_on_pos,
@@ -49,21 +47,46 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     };
 
     initializeSettings();
-  }, []);
+  }, [getAppSettings]);
 
-  const handleUpdateSettings = async (newSettings: Parameters<SettingsContextType['updateSettings']>[0]) => {
+  const handleUpdateSettings = async (newSettings: Partial<AppSettings>) => {
     try {
-      const updatedSettings = await updateSettings(newSettings);
-      if (updatedSettings) {
-        setSettings({
-          enable_vat_toggle_on_pos: updatedSettings.enable_vat_toggle_on_pos,
-          vat_pricing_model: updatedSettings.vat_pricing_model,
-          default_vat_rate: updatedSettings.default_vat_rate
-        });
+      setIsSyncing(true);
+      await updateAppSettings(newSettings);
+      
+      // Update local state
+      if (settings) {
+        const updatedSettings = { ...settings, ...newSettings };
+        setSettings(updatedSettings);
       }
+      
+      setLastSynced(new Date());
     } catch (error) {
       console.error('Error updating settings:', error);
       throw error;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const syncSettings = async () => {
+    // For now, just refresh settings from the service
+    try {
+      setIsSyncing(true);
+      const loadedSettings = await getAppSettings();
+      if (loadedSettings) {
+        setSettings({
+          enable_vat_toggle_on_pos: loadedSettings.enable_vat_toggle_on_pos,
+          vat_pricing_model: loadedSettings.vat_pricing_model,
+          default_vat_rate: loadedSettings.default_vat_rate
+        });
+      }
+      setLastSynced(new Date());
+    } catch (error) {
+      console.error('Error syncing settings:', error);
+      throw error;
+    } finally {
+      setIsSyncing(false);
     }
   };
 

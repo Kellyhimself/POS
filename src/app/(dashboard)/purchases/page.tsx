@@ -1,20 +1,15 @@
 'use client'
 
 import React, { useEffect, useState } from 'react';
-import { db, OfflinePurchase, OfflinePurchaseItem } from '@/lib/db';
-import { Database } from '@/types/supabase';
+import { useAuth } from '@/components/providers/AuthProvider';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// Helper types
-interface PurchaseWithItems extends OfflinePurchase {
-  items: OfflinePurchaseItem[];
-  supplier_name?: string;
-}
 
 const DateRangePicker = ({ startDate, endDate, onStartDateChange, onEndDateChange, isSingleDay }: {
   startDate: Date;
@@ -79,10 +74,10 @@ const DateRangePicker = ({ startDate, endDate, onStartDateChange, onEndDateChang
 };
 
 const PurchaseHistoryPage: React.FC = () => {
-  const [purchases, setPurchases] = useState<PurchaseWithItems[]>([]);
-  const [products, setProducts] = useState<Database['public']['Tables']['products']['Row'][]>([]);
+  const { storeId, loading } = useAuth();
+  const { currentMode, getPurchases, getProducts } = useUnifiedService();
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [filterSupplier, setFilterSupplier] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState<Date>(new Date(new Date().setDate(new Date().getDate() - 30)));
   const [endDate, setEndDate] = useState<Date>(new Date());
   const [isSingleDay, setIsSingleDay] = useState(false);
@@ -91,49 +86,53 @@ const PurchaseHistoryPage: React.FC = () => {
   useEffect(() => {
     // Update end date when single day mode is toggled
     if (isSingleDay) {
-      setEndDate(startDate);
+      // Set endDate to the end of the same day (23:59:59.999)
+      const endOfDay = new Date(startDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      setEndDate(endOfDay);
     }
   }, [isSingleDay, startDate]);
 
-  useEffect(() => {
-    // Fetch products
-    db.products?.toArray().then(setProducts);
-    // Fetch purchases and their items
-    db.purchases.toArray().then(async (purchases) => {
-      const withItems = await Promise.all(
-        purchases.map(async (purchase) => {
-          const items = await db.purchase_items.where('purchase_id').equals(purchase.id).toArray();
-          // Get supplier name
-          let supplier_name = '';
-          if (purchase.supplier_id) {
-            const supplier = await db.suppliers?.get(purchase.supplier_id);
-            supplier_name = supplier?.name || '';
-          }
-          // Fallback to purchase.supplier_name if no supplier_id
-          if (!supplier_name && purchase.supplier_name) {
-            supplier_name = purchase.supplier_name;
-          }
-          return { ...purchase, items, supplier_name };
-        })
-      );
-      setPurchases(withItems);
-    });
-  }, []);
+  // Fetch purchases using unified service
+  const { data: purchases = [], isLoading: purchasesLoading, error: purchasesError } = useQuery({
+    queryKey: ['purchases', storeId, currentMode, startDate, endDate, isSingleDay],
+    queryFn: async () => {
+      if (!storeId) return [];
+      return await getPurchases(storeId, startDate, endDate);
+    },
+    enabled: !!storeId,
+  });
 
-  const timeZone = 'Africa/Nairobi';
-  function toKenyaDateString(date: Date) {
-    return date.toLocaleDateString('en-CA', { timeZone }); // 'YYYY-MM-DD'
-  }
+  // Fetch products for filtering
+  const { data: products = [], isLoading: productsLoading } = useQuery({
+    queryKey: ['products', storeId, currentMode],
+    queryFn: async () => {
+      if (!storeId) return [];
+      return await getProducts(storeId);
+    },
+    enabled: !!storeId,
+  });
 
   // Filtering logic
   const filteredPurchases = purchases.filter((p) => {
-    const purchaseDate = (p.date || '').split('T')[0];
-    const start = toKenyaDateString(startDate);
-    const end = toKenyaDateString(endDate);
-    const matchesDate = purchaseDate >= start && purchaseDate <= end;
-    const matchesSupplier = filterSupplier ? (p.supplier_name || '').toLowerCase().includes(filterSupplier.toLowerCase()) : true;
-    if (!(matchesDate && matchesSupplier)) return false;
+    // Server-side filtering already handles date range, so we only need to filter by search terms and VAT status
+    const searchQuery = searchTerm.toLowerCase();
+    
+    // Check if search term matches supplier name, invoice number, or any product name
+    const matchesSupplier = !searchQuery || (p.supplier_name || '').toLowerCase().includes(searchQuery);
+    const matchesInvoice = !searchQuery || (p.invoice_number || '').toLowerCase().includes(searchQuery);
+    
+    // Check if any product in the purchase matches the search term
+    const matchesProduct = !searchQuery || p.items.some(item => {
+      const product = products.find(prod => prod.id === item.product_id);
+      return product && product.name.toLowerCase().includes(searchQuery);
+    });
+    
+    const matchesSearch = matchesSupplier || matchesInvoice || matchesProduct;
+    if (!matchesSearch) return false;
+    
     if (filterMode === 'overview') return true;
+    
     // Filtered mode (default):
     // Show only purchases where at least one item is:
     // - VATable (product.vat_status === true) AND input_vat_amount > 0
@@ -180,10 +179,26 @@ const PurchaseHistoryPage: React.FC = () => {
 
   const summary = calculateSummary();
 
+  if (loading) return <div>Loading auth state...</div>;
+  if (!storeId) return <div>No store assigned. Please contact your administrator.</div>;
+  if (purchasesLoading || productsLoading) return <div>Loading purchases...</div>;
+
+  if (purchasesError) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          {purchasesError instanceof Error ? purchasesError.message : 'An error occurred while loading purchases'}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-4">Purchase History</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold">Purchase History</h1>
+        </div>
         
         {/* VAT/Overview Filter Dropdown */}
         <div className="mb-4 flex gap-2 items-center">
@@ -224,13 +239,13 @@ const PurchaseHistoryPage: React.FC = () => {
               isSingleDay={isSingleDay}
             />
 
-            {/* Supplier Filter */}
+            {/* Search Filter */}
             <div className="relative flex-grow">
               <input
                 type="text"
-                value={filterSupplier}
-                onChange={e => setFilterSupplier(e.target.value)}
-                placeholder="Search by supplier..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Search by supplier, invoice number, or product name..."
                 className="border-2 border-blue-400 focus:border-blue-600 rounded px-2 py-1 w-full transition-colors duration-200"
               />
             </div>

@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { syncService } from '@/lib/sync';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AlertCircle, Plus, Pencil } from 'lucide-react';
@@ -11,7 +10,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   useReactTable,
   getCoreRowModel,
-  getFilteredRowModel,
   getPaginationRowModel,
   flexRender,
   createColumnHelper,
@@ -19,7 +17,8 @@ import {
 import AddStockDialog from '@/components/products/AddStockDialog';
 import { CreateProductPopover } from "@/components/products/CreateProductPopover";
 import { submitStockUpdateEtimsInvoice } from '@/lib/etims/utils';
-import { saveOfflinePurchase, updateOfflineProductPrice } from '@/lib/db';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
+import { useDebounce } from '@/hooks/useDebounce';
 
 const LOW_STOCK_THRESHOLD = 50;
 
@@ -126,6 +125,10 @@ function EditableQuantityCell({
     <AddStockDialog
       product={product}
       onAddStock={onAddStock}
+      onSuccess={() => {
+        // This will be called after successful stock addition
+        console.log('Stock added successfully for product:', product.name);
+      }}
     >
       <span
         className="cursor-pointer border-b-2 border-blue-500 text-blue-600 bg-blue-50/40 px-2 py-1 rounded transition-colors duration-150 flex items-center gap-1 hover:bg-blue-100 hover:text-blue-700"
@@ -141,8 +144,12 @@ function EditableQuantityCell({
 
 export default function InventoryPage() {
   const { storeId, loading } = useAuth();
+  const { currentMode, isOnlineMode, getProducts, createPurchase, updateProduct } = useUnifiedService();
   const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
+
+  // Debounce search input to prevent excessive filtering
+  const debouncedSearch = useDebounce(search, 300);
 
   const columnHelper = createColumnHelper<Product>();
 
@@ -150,18 +157,10 @@ export default function InventoryPage() {
     columnHelper.accessor('name', {
       header: 'Name',
       cell: info => info.getValue(),
-      filterFn: (row, id, value: string) => {
-        const cellValue = row.getValue(id) as string;
-        return cellValue?.toLowerCase().includes(value.toLowerCase());
-      },
     }),
     columnHelper.accessor('sku', {
       header: 'SKU',
       cell: info => info.getValue() || '-',
-      filterFn: (row, id, value: string) => {
-        const sku = row.getValue(id) as string | null;
-        return sku ? sku.toLowerCase().includes(value.toLowerCase()) : false;
-      },
     }),
     columnHelper.accessor('quantity', {
       header: 'Quantity',
@@ -222,35 +221,54 @@ export default function InventoryPage() {
     }),
   ];
 
-  // Fetch inventory data
+  // Fetch inventory data using unified service
   const { data: products, isLoading: productsLoading, error } = useQuery<Product[]>({
-    queryKey: ['products', storeId],
+    queryKey: ['products', storeId, currentMode],
     queryFn: async () => {
       if (!storeId) return [];
       try {
-        const data = await syncService.getProducts(storeId);
-        return data.map(product => ({
+        console.log('🔄 Inventory query: Fetching products for store:', storeId, 'mode:', currentMode);
+        const data = await getProducts(storeId);
+        console.log('✅ Inventory query: Received products:', data.length, 'products');
+        const mappedData = data.map(product => ({
           ...product,
           selling_price: product.retail_price || 0
         }));
+        console.log('📊 Inventory query: Mapped products with quantities:', 
+          mappedData.map(p => ({ id: p.id, name: p.name, quantity: p.quantity }))
+        );
+        return mappedData;
       } catch (error) {
-        console.error('Error fetching products:', error);
+        console.error('❌ Inventory query: Error fetching products:', error);
         throw error;
       }
     },
     enabled: !!storeId,
   });
 
+  // Efficient search filtering using useMemo
+  const filteredProducts = useMemo(() => {
+    if (!products || !debouncedSearch.trim()) {
+      return products || [];
+    }
+
+    const searchTerm = debouncedSearch.toLowerCase().trim();
+    return products.filter(product => {
+      const name = product.name.toLowerCase();
+      const sku = (product.sku || '').toLowerCase();
+      const category = (product.category || '').toLowerCase();
+      
+      return name.includes(searchTerm) || 
+             sku.includes(searchTerm) || 
+             category.includes(searchTerm);
+    });
+  }, [products, debouncedSearch]);
+
   const table = useReactTable({
-    data: products || [],
+    data: filteredProducts,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    state: {
-      globalFilter: search,
-    },
-    onGlobalFilterChange: setSearch,
     initialState: {
       pagination: {
         pageSize: 10,
@@ -275,13 +293,15 @@ export default function InventoryPage() {
         throw new Error('Store ID is required');
       }
       const totalQuantity = numberOfPacks * product.units_per_pack;
-      // Prepare purchase and item
+      
+      // Prepare purchase data in the format expected by UnifiedService
       const kenyaTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' });
       const kenyaDate = new Date(kenyaTime);
       const timestampISO = kenyaDate.toISOString();
-      const purchase = {
+      
+      const purchaseData = {
         store_id: storeId,
-        supplier_id: purchaseDetails.supplier_id || null,
+        supplier_id: purchaseDetails.supplier_id || undefined,
         supplier_name: purchaseDetails.supplier_name,
         invoice_number: purchaseDetails.invoice_number,
         supplier_vat_no: purchaseDetails.supplier_vat_no,
@@ -290,19 +310,17 @@ export default function InventoryPage() {
         total_amount: product.cost_price * totalQuantity,
         date: timestampISO,
         notes: '',
-        synced: false,
-        created_at: timestampISO,
+        items: [{
+          product_id: product.id,
+          quantity: totalQuantity,
+          unit_cost: product.cost_price,
+          vat_amount: purchaseDetails.input_vat_amount,
+        }]
       };
-      const item = {
-        purchase_id: '', // This will be set by saveOfflinePurchase
-        product_id: product.id,
-        quantity: totalQuantity,
-        unit_cost: product.cost_price,
-        vat_amount: purchaseDetails.input_vat_amount,
-        created_at: timestampISO,
-      };
-      // Save offline purchase (this also updates stock)
-      await saveOfflinePurchase(purchase, [item]);
+
+      // Use unified service to create purchase (handles both online and offline modes)
+      await createPurchase(purchaseData);
+      
       // eTIMS submission if input VAT
       if (purchaseDetails.input_vat_amount > 0) {
         await submitStockUpdateEtimsInvoice(
@@ -318,8 +336,16 @@ export default function InventoryPage() {
           purchaseDetails.input_vat_amount
         );
       }
-      queryClient.invalidateQueries({ queryKey: ['products', storeId] });
+      
+      // Force refetch the products to get updated quantities
+      await queryClient.invalidateQueries({ queryKey: ['products', storeId, currentMode] });
+      console.log('🔄 handleAddStock: Query invalidated for key:', ['products', storeId, currentMode]);
+      
+      // Also refetch to ensure we get the latest data
+      await queryClient.refetchQueries({ queryKey: ['products', storeId, currentMode] });
+      console.log('✅ handleAddStock: Query refetched successfully');
     } catch (error) {
+      console.error('Error adding stock:', error);
       throw error;
     }
   };
@@ -328,15 +354,20 @@ export default function InventoryPage() {
     if (!storeId) return;
     try {
       // Optimistically update UI
-      queryClient.setQueryData(['products', storeId], (old: Product[] | undefined) => {
+      queryClient.setQueryData(['products', storeId, currentMode], (old: Product[] | undefined) => {
         if (!old) return old;
         return old.map(p => p.id === productId ? { ...p, [field]: newValue } : p);
       });
-      // Update in local DB (offline-first)
-      await updateOfflineProductPrice(productId, field, newValue);
-      queryClient.invalidateQueries({ queryKey: ['products', storeId] });
-    } catch {
-      queryClient.invalidateQueries({ queryKey: ['products', storeId] });
+      
+      // Use unified service to update product (handles both online and offline modes)
+      await updateProduct(productId, { [field]: newValue });
+      
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['products', storeId, currentMode] });
+    } catch (error) {
+      console.error('Error updating product price:', error);
+      // Revert optimistic update on error
+      queryClient.invalidateQueries({ queryKey: ['products', storeId, currentMode] });
     }
   };
 
@@ -365,17 +396,41 @@ export default function InventoryPage() {
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-2">
         <div className="flex gap-2 w-full md:w-auto">
-          <Input
-            type="text"
-            placeholder="Search by name or SKU..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full md:w-64 p-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-[#0ABAB5] focus:border-transparent text-gray-800 bg-white placeholder:text-gray-400"
-          />
+          <div className="relative w-full md:w-64">
+            <Input
+              type="text"
+              placeholder="Search by name, SKU, or category..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full p-1.5 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-[#0ABAB5] focus:border-transparent text-gray-800 bg-white placeholder:text-gray-400 pr-8"
+            />
+            {search && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                {search !== debouncedSearch && (
+                  <div className="w-3 h-3 border-2 border-gray-300 border-t-[#0ABAB5] rounded-full animate-spin"></div>
+                )}
+                <span className="text-xs text-gray-500">
+                  {filteredProducts.length} of {products?.length || 0}
+                </span>
+                <button
+                  onClick={() => setSearch('')}
+                  className="ml-1 text-gray-400 hover:text-gray-600 text-xs"
+                  title="Clear search"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
           <div className="relative flex items-center justify-center">
             <CreateProductPopover storeId={storeId} />
           </div>
         </div>
+        {search && (
+          <div className="text-sm text-gray-600">
+            Showing {filteredProducts.length} of {products?.length || 0} products
+          </div>
+        )}
       </div>
 
       <section className="bg-white rounded-lg shadow p-3 md:p-4">
@@ -414,18 +469,7 @@ export default function InventoryPage() {
                     >
                       {row.getVisibleCells().map(cell => (
                         <td key={cell.id} className="py-1.5 px-2 text-gray-800 whitespace-nowrap">
-                          {cell.column.id === 'quantity' ? (
-                            <AddStockDialog
-                              product={row.original}
-                              onAddStock={handleAddStock}
-                            >
-                              <div className="flex items-center gap-2">
-                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                              </div>
-                            </AddStockDialog>
-                          ) : (
-                            flexRender(cell.column.columnDef.cell, cell.getContext())
-                          )}
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}
                     </tr>
@@ -470,6 +514,10 @@ export default function InventoryPage() {
                     <AddStockDialog
                       product={row.original}
                       onAddStock={handleAddStock}
+                      onSuccess={() => {
+                        // This will be called after successful stock addition
+                        console.log('Stock added successfully for product:', row.original.name);
+                      }}
                     >
                       <button
                         type="button"

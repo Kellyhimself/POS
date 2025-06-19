@@ -138,16 +138,28 @@ export async function getOfflineUser(userId?: string) {
 }
 
 export async function cacheProducts(products: Database['public']['Tables']['products']['Row'][]) {
+  console.log('🔄 cacheProducts: Caching products:', products.length, 'products');
   // Add synced field to each product
   const offlineProducts = products.map(product => ({
     ...product,
     synced: true
   }));
   await db.products.bulkPut(offlineProducts);
+  console.log('✅ cacheProducts: Products cached successfully');
+  
+  // Verify cache
+  const cachedProducts = await db.products.toArray();
+  console.log('📊 cacheProducts: Total products in cache:', cachedProducts.length);
 }
 
 export async function getCachedProducts(storeId: string) {
-  return await db.products.where('store_id').equals(storeId).toArray();
+  console.log('🔄 getCachedProducts: Fetching products for store:', storeId);
+  const products = await db.products.where('store_id').equals(storeId).toArray();
+  console.log('✅ getCachedProducts: Retrieved products:', products.length, 'products');
+  console.log('📊 getCachedProducts: Product quantities:', 
+    products.map(p => ({ id: p.id, name: p.name, quantity: p.quantity, synced: p.synced }))
+  );
+  return products;
 }
 
 export async function cacheTransaction(transaction: Database['public']['Tables']['transactions']['Row']) {
@@ -308,17 +320,27 @@ export async function saveOfflineSale(sale: SaleInput) {
   };
 
   // Create sale items
-  const saleItems: OfflineSaleItem[] = sale.products.map(product => ({
-    id: crypto.randomUUID(),
-    sale_id: saleId,
-    product_id: product.id,
-    quantity: product.quantity,
-    price: product.displayPrice,
-    vat_amount: product.vat_amount,
-    sale_mode: 'retail' as const,
-    timestamp: timestampISO,
-    created_at: timestampISO
-  }));
+  const saleItems: OfflineSaleItem[] = sale.products.map(product => {
+    // Debug logging for VAT storage
+    console.log('💾 VAT Storage Debug - Product:', {
+      product_id: product.id,
+      quantity: product.quantity,
+      vat_amount_being_stored: product.vat_amount,
+      note: 'This should be VAT per unit'
+    });
+    
+    return {
+      id: crypto.randomUUID(),
+      sale_id: saleId,
+      product_id: product.id,
+      quantity: product.quantity,
+      price: product.displayPrice,
+      vat_amount: product.vat_amount,
+      sale_mode: 'retail' as const,
+      timestamp: timestampISO,
+      created_at: timestampISO
+    };
+  });
 
   // Use a transaction that includes all object stores we're modifying
   await db.transaction('rw', [db.transactions, db.sale_items, db.products], async () => {
@@ -631,6 +653,18 @@ export async function getSalesReport(storeId: string, startDate: Date, endDate: 
       const itemsWithProducts = await Promise.all(
         saleItems.map(async (item: SaleItem) => {
           const product = await db.products.get(item.product_id) as Product | undefined;
+          
+          // Debug logging for VAT calculation
+          console.log('🔍 VAT Debug - Sale Item:', {
+            product_id: item.product_id,
+            product_name: product?.name,
+            quantity: item.quantity,
+            price: item.price,
+            vat_amount_per_unit: item.vat_amount,
+            vat_amount_total: item.vat_amount * item.quantity,
+            calculation: `${item.vat_amount} × ${item.quantity} = ${item.vat_amount * item.quantity}`
+          });
+          
           return {
             id: transaction.id,
             product_id: item.product_id,
@@ -867,6 +901,11 @@ export async function updateOfflineStockQuantity(productId: string, quantityToAd
 
 // Save a purchase and its items, and update stock
 export async function saveOfflinePurchase(purchase: Omit<OfflinePurchase, 'id' | 'created_at' | 'synced'>, items: Array<Omit<OfflinePurchaseItem, 'id' | 'created_at' | 'synced'>>) {
+  console.log('🔄 saveOfflinePurchase: Starting purchase save:', {
+    purchase: { ...purchase, items_count: items.length },
+    items: items.map(item => ({ product_id: item.product_id, quantity: item.quantity }))
+  });
+
   const purchaseId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
   const offlinePurchase: OfflinePurchase = {
@@ -882,23 +921,69 @@ export async function saveOfflinePurchase(purchase: Omit<OfflinePurchase, 'id' |
     created_at: createdAt,
     synced: false
   }));
+
+  console.log('🔄 saveOfflinePurchase: About to start transaction');
+  
   await db.transaction('rw', [db.purchases, db.purchase_items, db.products], async () => {
+    console.log('🔄 saveOfflinePurchase: Transaction started, saving purchase');
     await db.purchases.put(offlinePurchase);
+    
+    console.log('🔄 saveOfflinePurchase: Saving purchase items');
     await db.purchase_items.bulkPut(offlineItems);
+    
     // Update product stock for each item
     for (const item of offlineItems) {
       if (item.product_id) { // Add null check
+        console.log('🔄 saveOfflinePurchase: Updating stock for product:', item.product_id);
         const product = await db.products.get(item.product_id);
         if (product) {
+          const oldQuantity = product.quantity || 0;
+          const newQuantity = oldQuantity + item.quantity;
+          console.log('🔄 saveOfflinePurchase: Stock update details:', {
+            product_id: item.product_id,
+            product_name: product.name,
+            old_quantity: oldQuantity,
+            quantity_to_add: item.quantity,
+            new_quantity: newQuantity
+          });
+          
           await db.products.put({
             ...product,
-            quantity: (product.quantity || 0) + item.quantity,
+            quantity: newQuantity,
             synced: false
           });
+          
+          // Verify the update
+          const updatedProduct = await db.products.get(item.product_id);
+          console.log('✅ saveOfflinePurchase: Stock update verified:', {
+            product_id: item.product_id,
+            final_quantity: updatedProduct?.quantity,
+            synced: updatedProduct?.synced
+          });
+        } else {
+          console.error('❌ saveOfflinePurchase: Product not found:', item.product_id);
         }
       }
     }
   });
+
+  console.log('✅ saveOfflinePurchase: Transaction completed successfully');
+  
+  // Get final state of products for verification
+  const finalProducts = await db.products
+    .where('id')
+    .anyOf(items.map(item => item.product_id).filter((id): id is string => id !== null))
+    .toArray();
+
+  console.log('📊 saveOfflinePurchase: Final product quantities:', {
+    products: finalProducts.map(p => ({
+      id: p.id,
+      name: p.name,
+      quantity: p.quantity,
+      synced: p.synced
+    }))
+  });
+
   return { ...offlinePurchase, items: offlineItems };
 }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useSync } from '@/hooks/useSync';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { format } from 'date-fns';
 import { saveAs } from 'file-saver';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -11,8 +11,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 interface ReportData {
   data: Array<{
@@ -153,9 +151,10 @@ export default function ReportsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const { user, session, storeId, storeName } = useAuth();
-  const { generateReports, generateInventoryReport, generateInputVatReport, generalReport } = useSync(storeId || '');
+  const { currentMode, generateReports, generateInventoryReport, generateInputVatReport, generalReport } = useUnifiedService();
   const { isOnline } = useAuth();
   const [generalData, setGeneralData] = useState<ReportData | null>(null);
+  
   const tabList = [
     { key: 'sales', label: 'Sales Report' },
     { key: 'inventory', label: 'Inventory Report' },
@@ -178,6 +177,7 @@ export default function ReportsPage() {
     }
   }, [user, session]);
 
+  // Data fetching effect
   useEffect(() => {
     let isMounted = true;
 
@@ -190,36 +190,31 @@ export default function ReportsPage() {
       setIsLoading(true);
       try {
         if (activeTab === 'sales') {
-          // Convert the selected dates to Kenya timezone
-          // The date picker provides dates in local timezone, but we need Kenya timezone
           const startOfDay = new Date(startDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
           startOfDay.setHours(0, 0, 0, 0);
           
           let endOfDay: Date;
           
           if (isSingleDay) {
-            // For single day mode, use the same date for both start and end
             endOfDay = new Date(startDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
             endOfDay.setHours(23, 59, 59, 999);
           } else {
-            // For date range mode, use the end date
             endOfDay = new Date(endDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
             endOfDay.setHours(23, 59, 59, 999);
           }
 
-          console.log('📅 Reports page - Date range being sent:', {
-            isSingleDay,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            startOfDay: startOfDay.toISOString(),
-            endOfDay: endOfDay.toISOString(),
-            startOfDayLocal: startOfDay.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }),
-            endOfDayLocal: endOfDay.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' })
+          const data = await generateReports(storeId!, startOfDay, endOfDay);
+          console.log('🔍 Sales report data structure:', {
+            data,
+            dataType: typeof data,
+            dataLength: data.length,
+            data0: data[0],
+            data0Type: typeof data[0]
           });
-
-          const data = await generateReports(startOfDay, endOfDay);
           if (isMounted) {
-            setSalesData(data);
+            // Fix: The data structure is [{ data: [...] }], so we need to access data[0].data
+            const reportData = (data[0] as any)?.data || [];
+            setSalesData({ data: reportData as ReportData['data'] });
           }
         } else if (activeTab === 'vat') {
           const startOfDay = new Date(startDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
@@ -236,13 +231,17 @@ export default function ReportsPage() {
           }
 
           const [outputVatData, inputVatData] = await Promise.all([
-            generateReports(startOfDay, endOfDay),
-            generateInputVatReport(startOfDay, endOfDay)
+            generateReports(storeId!, startOfDay, endOfDay),
+            generateInputVatReport(storeId!, startOfDay, endOfDay)
           ]);
 
           if (isMounted) {
-            setSalesData(outputVatData);
-            setInputVatData(inputVatData);
+            // Fix: The data structure is [{ data: [...] }], so we need to access data[0].data
+            const outputReportData = (outputVatData[0] as any)?.data || [];
+            const inputReportData = (inputVatData[0] as any)?.data || [];
+            
+            setSalesData({ data: outputReportData as ReportData['data'] });
+            setInputVatData({ data: inputReportData as InputVatReportData['data'] });
           }
         } else if (activeTab === 'profitability') {
           const startOfDay = new Date(startDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
@@ -258,9 +257,18 @@ export default function ReportsPage() {
             endOfDay.setHours(23, 59, 59, 999);
           }
 
-          const data = await generateReports(startOfDay, endOfDay);
+          const data = await generateReports(storeId!, startOfDay, endOfDay);
+          console.log('🔍 Profitability report data structure:', {
+            data,
+            dataType: typeof data,
+            dataLength: data.length,
+            data0: data[0],
+            data0Type: typeof data[0]
+          });
           if (isMounted) {
-            setSalesData(data);
+            // Fix: The data structure is [{ data: [...] }], so we need to access data[0].data
+            const reportData = (data[0] as any)?.data || [];
+            setSalesData({ data: reportData as ReportData['data'] });
           }
         } else if (activeTab === 'overview') {
           const startOfDay = new Date(startDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
@@ -273,14 +281,33 @@ export default function ReportsPage() {
             endOfDay = new Date(endDate.toLocaleString('en-US', { timeZone: 'Africa/Nairobi' }));
             endOfDay.setHours(23, 59, 59, 999);
           }
-          const data = await generalReport(startOfDay, endOfDay);
+          const data = await generalReport(storeId!, startOfDay, endOfDay);
+          console.log('🔍 generalReport data structure:', {
+            data,
+            dataType: typeof data,
+            dataLength: data.length,
+            data0: data[0],
+            data0Type: typeof data[0],
+            isArray: Array.isArray(data[0])
+          });
           if (isMounted) {
-            setGeneralData({ data });
+            // Fix: The data structure is [{ data: [...] }], so we need to access data[0].data
+            const reportData = (data[0] as any)?.data || [];
+            setGeneralData({ data: reportData as ReportData['data'] });
           }
         } else {
-          const data = await generateInventoryReport();
+          const data = await generateInventoryReport(storeId!);
+          console.log('🔍 Inventory report data structure:', {
+            data,
+            dataType: typeof data,
+            dataLength: data.length,
+            data0: data[0],
+            data0Type: typeof data[0]
+          });
           if (isMounted) {
-            setInventoryData(data);
+            // Fix: The data structure is [{ data: [...] }], so we need to access data[0].data
+            const reportData = (data[0] as any)?.data || [];
+            setInventoryData({ data: reportData as InventoryReportData['data'] });
           }
         }
       } catch (error) {
@@ -300,15 +327,16 @@ export default function ReportsPage() {
     return () => {
       isMounted = false;
     };
-  }, [activeTab, startDate, endDate, isSingleDay, storeId, user, session]);
+  }, [activeTab, startDate, endDate, isSingleDay, storeId, user, session, generateReports, generateInventoryReport, generateInputVatReport, generalReport]);
 
+  // Export functions
   const exportToCSV = async () => {
     if (!user || !session || !storeId) {
       toast.error('Authentication required to export reports');
       return;
     }
 
-    if (!salesData && !inventoryData) {
+    if (!salesData && !inventoryData && !generalData) {
       toast.error('No data available to export');
       return;
     }
@@ -321,26 +349,26 @@ export default function ReportsPage() {
 
       if (activeTab === 'sales') {
         headers = 'Product,Quantity,Price,Total,Payment Method,Date\n';
-        rows = salesData?.data.map(item => {
+        rows = filteredSalesData?.map(item => {
           const product = item.products?.name || 'Unknown';
-          return `${product},${item.quantity},${item.total},${item.total + item.vat_amount},${item.payment_method},${format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}`;
+          return `${product},${item.quantity},${(item.total / item.quantity).toFixed(2)},${item.total.toFixed(2)},${item.payment_method},${format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}`;
         }).join('\n') || '';
       } else if (activeTab === 'inventory') {
         headers = 'Product,SKU,Category,Quantity,Retail Price,Wholesale Price,Low Stock\n';
-        rows = inventoryData?.data.map(item => {
+        rows = filteredInventoryData?.map(item => {
           return `${item.name},${item.sku || ''},${item.category || ''},${item.quantity},${item.retail_price?.toFixed(2) || ''},${item.wholesale_price?.toFixed(2) || ''},${item.low_stock ? 'Yes' : 'No'}`;
         }).join('\n') || '';
       } else if (activeTab === 'vat') {
         headers = 'Product,Type,Taxable Amount,VAT Amount,Date\n';
-        const allVatData = [...(salesData?.data || []), ...(inputVatData?.data || [])];
-        rows = allVatData.map(item => {
+        const filteredVatData = getFilteredVatData();
+        rows = filteredVatData.map(item => {
           const product = item.products?.name || 'Unknown';
           const type = item.submission_type === 'input_vat' ? 'Purchase' : 'Sale';
           return `${product},${type},${item.total},${item.vat_amount},${format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}`;
         }).join('\n') || '';
       } else if (activeTab === 'profitability') {
         headers = 'Product,Quantity,Revenue,Cost,Profit,Profit Margin,Date\n';
-        rows = salesData?.data.map(item => {
+        rows = filteredSalesData?.map(item => {
           const costPrice = item.products?.cost_price || 0;
           const revenue = item.total;
           const cost = costPrice * item.quantity;
@@ -348,6 +376,12 @@ export default function ReportsPage() {
           const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
           const product = item.products?.name || 'Unknown';
           return `${product},${item.quantity},${revenue.toFixed(2)},${cost.toFixed(2)},${profit.toFixed(2)},${profitMargin.toFixed(1)}%,${format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}`;
+        }).join('\n') || '';
+      } else if (activeTab === 'overview') {
+        headers = 'Product,Quantity,Price,Total,Payment Method,Date\n';
+        rows = filteredGeneralData?.map(item => {
+          const product = item.products?.name || 'Unknown';
+          return `${product},${item.quantity},${(item.total / item.quantity).toFixed(2)},${item.total.toFixed(2)},${item.payment_method},${format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}`;
         }).join('\n') || '';
       }
 
@@ -363,10 +397,243 @@ export default function ReportsPage() {
     }
   };
 
+  const exportToPDF = async () => {
+    if (!user || !session || !storeId) {
+      toast.error('Authentication required to export reports');
+      return;
+    }
+
+    if (!salesData && !inventoryData && !generalData) {
+      toast.error('No data available to export');
+      return;
+    }
+
+    setIsPdfLoading(true);
+    try {
+      // Dynamic imports to avoid HMR issues
+      const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable')
+      ]);
+
+      const doc = new jsPDF();
+      
+      // Add title
+      const title = `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Report`;
+      doc.setFontSize(20);
+      doc.text(title, 14, 20);
+      
+      // Add store info
+      doc.setFontSize(12);
+      doc.text(`Store: ${storeName || 'Unknown Store'}`, 14, 30);
+      doc.text(`Date Range: ${format(startDate, 'dd/MM/yyyy')}${!isSingleDay ? ` - ${format(endDate, 'dd/MM/yyyy')}` : ''}`, 14, 37);
+      doc.text(`Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 44);
+
+      // Add summary data
+      let yPosition = 65;
+      
+      if (activeTab === 'sales' && salesData) {
+        const totals = calculateTotals();
+        if (totals) {
+          doc.setFontSize(14);
+          doc.text('Summary', 14, yPosition);
+          yPosition += 10;
+          doc.setFontSize(10);
+          doc.text(`Total Sales: KES ${totals.totalSales.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Total Quantity: ${totals.totalQuantity}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Average Sale: KES ${totals.averageSale.toFixed(2)}`, 14, yPosition);
+          yPosition += 15;
+        }
+      } else if (activeTab === 'inventory' && inventoryData) {
+        const totals = calculateInventoryTotals();
+        if (totals) {
+          doc.setFontSize(14);
+          doc.text('Summary', 14, yPosition);
+          yPosition += 10;
+          doc.setFontSize(10);
+          doc.text(`Total Products: ${totals.totalProducts}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Total Quantity: ${totals.totalQuantity}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Retail Value: KES ${totals.totalRetailValue.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Wholesale Value: KES ${totals.totalWholesaleValue.toFixed(2)}`, 14, yPosition);
+          yPosition += 15;
+        }
+      } else if (activeTab === 'vat' && salesData) {
+        const totals = calculateVatTotals();
+        if (totals) {
+          doc.setFontSize(14);
+          doc.text('Summary', 14, yPosition);
+          yPosition += 10;
+          doc.setFontSize(10);
+          doc.text(`Output VAT: KES ${totals.output_vat_total.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Input VAT: KES ${totals.input_vat_total.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Net VAT: KES ${totals.net_vat.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`VAT Rate: 16%`, 14, yPosition);
+          yPosition += 15;
+        }
+      } else if (activeTab === 'profitability' && salesData) {
+        const totals = calculateProfitabilityTotals();
+        if (totals) {
+          doc.setFontSize(14);
+          doc.text('Summary', 14, yPosition);
+          yPosition += 10;
+          doc.setFontSize(10);
+          doc.text(`Total Revenue: KES ${totals.totalRevenue.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Total Cost: KES ${totals.totalCost.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Total Profit: KES ${totals.totalProfit.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Avg. Profit Margin: ${totals.averageProfitMargin.toFixed(1)}%`, 14, yPosition);
+          yPosition += 15;
+        }
+      } else if (activeTab === 'overview' && generalData) {
+        const totals = calculateOverviewTotals();
+        if (totals) {
+          doc.setFontSize(14);
+          doc.text('Summary', 14, yPosition);
+          yPosition += 10;
+          doc.setFontSize(10);
+          doc.text(`Total Sales: KES ${totals.totalSales.toFixed(2)}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Total Quantity: ${totals.totalQuantity}`, 14, yPosition);
+          yPosition += 7;
+          doc.text(`Average Sale: KES ${totals.averageSale.toFixed(2)}`, 14, yPosition);
+          yPosition += 15;
+        }
+      }
+
+      // Prepare table data
+      let tableData: string[][] = [];
+      let tableHeaders: string[] = [];
+
+      if (activeTab === 'sales' && salesData) {
+        tableHeaders = ['Product', 'Quantity', 'Price', 'Total', 'Payment Method', 'Date'];
+        tableData = filteredSalesData?.map(item => [
+          item.products?.name || 'Unknown',
+          item.quantity.toString(),
+          (item.total / item.quantity).toFixed(2),
+          item.total.toFixed(2),
+          item.payment_method,
+          format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
+        ]) || [];
+      } else if (activeTab === 'inventory' && inventoryData) {
+        tableHeaders = ['Product', 'SKU', 'Category', 'Quantity', 'Retail Price', 'Wholesale Price', 'Low Stock'];
+        tableData = filteredInventoryData?.map(item => [
+          item.name,
+          item.sku || '-',
+          item.category || '-',
+          item.quantity.toString(),
+          item.retail_price?.toFixed(2) || '-',
+          item.wholesale_price?.toFixed(2) || '-',
+          item.low_stock ? 'Yes' : 'No'
+        ]) || [];
+      } else if (activeTab === 'vat' && salesData) {
+        tableHeaders = ['Product', 'Type', 'Taxable Amount', 'VAT Amount', 'Date'];
+        const filteredVatData = getFilteredVatData();
+        tableData = filteredVatData.map(item => [
+          item.products?.name || 'Unknown',
+          item.submission_type === 'input_vat' ? 'Purchase' : 'Sale',
+          item.total.toFixed(2),
+          item.vat_amount.toFixed(2),
+          format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
+        ]);
+      } else if (activeTab === 'profitability' && salesData) {
+        tableHeaders = ['Product', 'Sale Mode', 'Quantity', 'Revenue', 'Cost', 'Profit', 'Profit Margin', 'Date'];
+        tableData = filteredSalesData?.map(item => {
+          const costPrice = item.products?.cost_price || 0;
+          const revenue = item.total;
+          const cost = costPrice * item.quantity;
+          const profit = revenue - cost;
+          const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
+          return [
+            item.products?.name || 'Unknown',
+            item.sale_mode || 'Unknown',
+            item.quantity.toString(),
+            revenue.toFixed(2),
+            cost.toFixed(2),
+            profit.toFixed(2),
+            `${profitMargin.toFixed(1)}%`,
+            format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
+          ];
+        }) || [];
+      } else if (activeTab === 'overview' && generalData) {
+        tableHeaders = ['Product', 'Quantity', 'Price', 'Total', 'Payment Method', 'Date'];
+        tableData = filteredGeneralData?.map(item => [
+          item.products?.name || 'Unknown',
+          item.quantity.toString(),
+          (item.total / item.quantity).toFixed(2),
+          item.total.toFixed(2),
+          item.payment_method,
+          format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
+        ]) || [];
+      }
+
+      // Add table if there's data
+      if (tableData.length > 0) {
+        autoTable(doc, {
+          head: [tableHeaders],
+          body: tableData,
+          startY: yPosition,
+          styles: {
+            fontSize: 8,
+            cellPadding: 2,
+          },
+          headStyles: {
+            fillColor: [66, 139, 202],
+            textColor: 255,
+            fontStyle: 'bold',
+          },
+          alternateRowStyles: {
+            fillColor: [245, 245, 245],
+          },
+        });
+      } else {
+        // Add no data message
+        doc.setFontSize(12);
+        doc.text('No data available for the selected date range', 14, yPosition);
+      }
+
+      // Save the PDF
+      const fileName = `${activeTab}_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`;
+      doc.save(fileName);
+      toast.success('PDF exported successfully');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Failed to export PDF. Please try again.');
+    } finally {
+      setIsPdfLoading(false);
+    }
+  };
+
+  // Calculation functions
   const calculateTotals = () => {
     if (!salesData?.data) return null;
 
     const totals = salesData.data.reduce((acc, item) => ({
+      totalSales: acc.totalSales + (item.total || 0),
+      totalQuantity: acc.totalQuantity + (item.quantity || 0),
+      averageSale: (acc.totalSales + (item.total || 0)) / (acc.totalQuantity + (item.quantity || 0))
+    }), {
+      totalSales: 0,
+      totalQuantity: 0,
+      averageSale: 0
+    });
+
+    return totals;
+  };
+
+  const calculateOverviewTotals = () => {
+    if (!generalData?.data || !Array.isArray(generalData.data)) return null;
+
+    const totals = generalData.data.reduce((acc, item) => ({
       totalSales: acc.totalSales + (item.total || 0),
       totalQuantity: acc.totalQuantity + (item.quantity || 0),
       averageSale: (acc.totalSales + (item.total || 0)) / (acc.totalQuantity + (item.quantity || 0))
@@ -419,17 +686,6 @@ export default function ReportsPage() {
       const profit = sellingPrice - cost;
       const profitMargin = sellingPrice > 0 ? (profit / sellingPrice) * 100 : 0;
 
-      console.log('🔍 Profitability calculation:', {
-        product: item.products?.name,
-        costPrice,
-        sellingPrice,
-        quantity: item.quantity,
-        cost,
-        profit,
-        profitMargin,
-        saleMode: item.sale_mode
-      });
-
       return {
         totalRevenue: acc.totalRevenue + sellingPrice,
         totalCost: acc.totalCost + cost,
@@ -452,9 +708,13 @@ export default function ReportsPage() {
     return totals;
   };
 
+  // Filtering functions
   const filteredSalesData = salesData?.data.filter(item => {
     const matchesSearch = item.products?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.products?.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Remove the duplicate VAT filtering since getSalesReport already handles this
+    // The data from getSalesReport is already filtered to exclude VATable products with 0 VAT
     return matchesSearch;
   });
 
@@ -464,19 +724,53 @@ export default function ReportsPage() {
     item.category?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Helper function to filter VAT data - exclude rows with zero VAT amounts
   const getFilteredVatData = () => {
     const allVatData = [...(filteredSalesData || []), ...(inputVatData?.data || [])];
-    return allVatData.filter(item => {
-      const isVatable = item.products?.vat_status === true;
-      if (isVatable) {
+    
+    const filteredData = allVatData.filter(item => {
+      const matchesSearch = item.products?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.products?.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (!matchesSearch) return false;
+      
+      // Check if this is input VAT data
+      const isInputVat = item.submission_type === 'input_vat';
+      
+      if (isInputVat) {
+        // For input VAT: only show items with VAT amount > 0
         return (item.vat_amount || 0) > 0;
+      } else {
+        // For output VAT: use existing logic - filter out rows that are VATable but have 0 VAT amounts
+        const isVatable = item.products?.vat_status === true;
+        if (isVatable) {
+          return (item.vat_amount || 0) > 0;
+        }
+        return true;
       }
-      // For zero-rated/exempted, always include
-      return true;
     });
+    
+    return filteredData;
   };
 
+  // Overview data filtering - no VAT filtering, just search
+  const filteredGeneralData = Array.isArray(generalData?.data) ? generalData.data.filter(item => {
+    const matchesSearch = item.products?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.products?.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
+  }) : [];
+
+  // Debug logging for overview data
+  console.log('🔍 Overview data debug:', {
+    generalData,
+    generalDataType: typeof generalData,
+    generalDataData: generalData?.data,
+    generalDataDataType: typeof generalData?.data,
+    isArray: Array.isArray(generalData?.data),
+    filteredGeneralData,
+    filteredGeneralDataLength: filteredGeneralData?.length
+  });
+
+  // Summary cards
   const renderSummaryCards = () => {
     if (isLoading) return null;
 
@@ -580,208 +874,40 @@ export default function ReportsPage() {
       );
     }
 
+    if (activeTab === 'overview' && generalData) {
+      const totals = calculateOverviewTotals();
+      if (!totals) return null;
+
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total Sales</h3>
+            <p className="text-2xl font-bold">KES {totals.totalSales.toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Total Quantity</h3>
+            <p className="text-2xl font-bold">{totals.totalQuantity}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm">Average Sale</h3>
+            <p className="text-2xl font-bold">KES {totals.averageSale.toFixed(2)}</p>
+          </div>
+        </div>
+      );
+    }
+
     return null;
-  };
-
-  const handlePdfExport = async () => {
-    if (!user || !session || !storeId) {
-      toast.error('Authentication required to export PDF');
-      return;
-    }
-
-    setIsPdfLoading(true);
-    try {
-      let reportData;
-      let reportTotals;
-
-      if (activeTab === 'sales' || activeTab === 'vat') {
-        reportData = salesData;
-        reportTotals = activeTab === 'vat' ? calculateVatTotals() : calculateTotals();
-      } else if (activeTab === 'overview') {
-        reportData = generalData;
-        reportTotals = null; // Optionally, you can calculate totals for overview if needed
-      } else {
-        reportData = inventoryData;
-        reportTotals = calculateInventoryTotals();
-      }
-
-      if (!reportData) {
-        throw new Error('No data available to export');
-      }
-
-      const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      
-      doc.setFontSize(20);
-      doc.text(`${storeName || 'Your Store'} - ${activeTab.toUpperCase()} Report`, pageWidth / 2, 20, { align: 'center' });
-      
-      doc.setFontSize(12);
-      doc.text(`Date Range: ${format(startDate, 'dd/MM/yyyy')}${isSingleDay ? '' : ` to ${format(endDate, 'dd/MM/yyyy')}`}`, pageWidth / 2, 30, { align: 'center' });
-      
-      if (!isOnline) {
-        doc.setFontSize(10);
-        doc.setTextColor(255, 0, 0);
-        doc.text('OFFLINE DATA', pageWidth / 2, 40, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
-      }
-
-      doc.setFontSize(12);
-      doc.text('Summary:', 14, 50);
-      
-      if (activeTab === 'sales') {
-        const salesTotals = reportTotals as { totalSales: number; totalQuantity: number; averageSale: number };
-        doc.setFontSize(10);
-        doc.text(`Total Sales: KES ${salesTotals.totalSales.toFixed(2)}`, 20, 60);
-        doc.text(`Total Quantity: ${salesTotals.totalQuantity}`, 20, 70);
-      } else if (activeTab === 'vat') {
-        const vatTotals = reportTotals as { output_vat_total: number; input_vat_total: number; net_vat: number };
-        doc.setFontSize(10);
-        doc.text(`Output VAT: KES ${vatTotals.output_vat_total.toFixed(2)}`, 20, 60);
-        doc.text(`Input VAT: KES ${vatTotals.input_vat_total.toFixed(2)}`, 20, 70);
-        doc.text(`Net VAT: KES ${vatTotals.net_vat.toFixed(2)}`, 20, 80);
-      } else if (activeTab === 'profitability') {
-        const profitabilityTotals = calculateProfitabilityTotals();
-        if (profitabilityTotals) {
-          doc.setFontSize(10);
-          doc.text(`Total Revenue: KES ${profitabilityTotals.totalRevenue.toFixed(2)}`, 20, 60);
-          doc.text(`Total Cost: KES ${profitabilityTotals.totalCost.toFixed(2)}`, 20, 70);
-          doc.text(`Total Profit: KES ${profitabilityTotals.totalProfit.toFixed(2)}`, 20, 80);
-          doc.text(`Avg. Profit Margin: ${profitabilityTotals.averageProfitMargin.toFixed(1)}%`, 20, 90);
-        }
-      } else if (activeTab === 'overview') {
-        // Optionally, add summary for overview if needed
-      } else {
-        const inventoryTotals = reportTotals as { totalProducts: number; totalQuantity: number; totalRetailValue: number; totalWholesaleValue: number };
-        doc.setFontSize(10);
-        doc.text(`Total Products: ${inventoryTotals.totalProducts}`, 20, 60);
-        doc.text(`Total Quantity: ${inventoryTotals.totalQuantity}`, 20, 70);
-        doc.text(`Retail Value: KES ${inventoryTotals.totalRetailValue.toFixed(2)}`, 20, 80);
-        doc.text(`Wholesale Value: KES ${inventoryTotals.totalWholesaleValue.toFixed(2)}`, 20, 90);
-      }
-
-      let tableData: TableRow[] = [];
-      let columns: TableColumn[] = [];
-
-      if (activeTab === 'sales' || activeTab === 'overview') {
-        columns = [
-          { header: 'Product', dataKey: 'product' },
-          { header: 'Quantity', dataKey: 'quantity' },
-          { header: 'Price', dataKey: 'price' },
-          { header: 'Total', dataKey: 'total' },
-          { header: 'Payment Method', dataKey: 'payment' },
-          { header: 'Date', dataKey: 'date' }
-        ];
-        tableData = (reportData as ReportData).data.map(item => ({
-          product: item.products?.name || 'Unknown',
-          quantity: item.quantity,
-          price: item.total.toFixed(2),
-          total: (item.total + item.vat_amount).toFixed(2),
-          payment: item.payment_method,
-          date: format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
-        }));
-      } else if (activeTab === 'inventory') {
-        columns = [
-          { header: 'Product', dataKey: 'product' },
-          { header: 'SKU', dataKey: 'sku' },
-          { header: 'Category', dataKey: 'category' },
-          { header: 'Quantity', dataKey: 'quantity' },
-          { header: 'Retail Price', dataKey: 'retail' },
-          { header: 'Wholesale Price', dataKey: 'wholesale' },
-          { header: 'Low Stock', dataKey: 'lowStock' }
-        ];
-        tableData = (reportData as InventoryReportData).data.map(item => ({
-          product: item.name,
-          sku: item.sku || '-',
-          category: item.category || '-',
-          quantity: item.quantity,
-          retail: item.retail_price?.toFixed(2) || '-',
-          wholesale: item.wholesale_price?.toFixed(2) || '-',
-          lowStock: item.low_stock ? 'Yes' : 'No'
-        }));
-      } else if (activeTab === 'vat') {
-        columns = [
-          { header: 'Product', dataKey: 'product' },
-          { header: 'Type', dataKey: 'type' },
-          { header: 'Taxable Amount', dataKey: 'taxable' },
-          { header: 'VAT Amount', dataKey: 'vat' },
-          { header: 'Date', dataKey: 'date' }
-        ];
-        tableData = getFilteredVatData().map((item, index) => ({
-          product: item.products?.name || 'Unknown',
-          type: item.submission_type === 'input_vat' ? 'Purchase' : 'Sale',
-          taxable: item.total.toFixed(2),
-          vat: item.vat_amount.toFixed(2),
-          date: format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
-        }));
-      } else if (activeTab === 'profitability') {
-        columns = [
-          { header: 'Product', dataKey: 'product' },
-          { header: 'Sale Mode', dataKey: 'saleMode' },
-          { header: 'Quantity', dataKey: 'quantity' },
-          { header: 'Revenue', dataKey: 'revenue' },
-          { header: 'Cost', dataKey: 'cost' },
-          { header: 'Profit', dataKey: 'profit' },
-          { header: 'Profit Margin', dataKey: 'margin' },
-          { header: 'Date', dataKey: 'date' }
-        ];
-        tableData = (reportData as ReportData).data.map(item => {
-          const costPrice = item.products?.cost_price || 0;
-          const revenue = item.total;
-          const cost = costPrice * item.quantity;
-          const profit = revenue - cost;
-          const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
-          
-          return {
-            product: item.products?.name || 'Unknown',
-            saleMode: item.sale_mode || 'Unknown',
-            quantity: item.quantity,
-            revenue: revenue.toFixed(2),
-            cost: cost.toFixed(2),
-            profit: profit.toFixed(2),
-            margin: `${profitMargin.toFixed(1)}%`,
-            date: format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')
-          };
-        });
-      }
-
-      autoTable(doc, {
-        head: [columns.map(col => col.header)],
-        body: tableData.map(row => columns.map(col => row[col.dataKey])),
-        startY: activeTab === 'inventory' ? 100 : activeTab === 'profitability' ? 110 : 90,
-        theme: 'grid',
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [66, 139, 202] }
-      });
-
-      const pageCount = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.text(
-          `Generated on ${format(new Date(), 'dd/MM/yyyy HH:mm')}${!isOnline ? ' (Offline Mode)' : ''}`,
-          pageWidth / 2,
-          doc.internal.pageSize.getHeight() - 10,
-          { align: 'center' }
-        );
-      }
-
-      doc.save(`${activeTab}_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
-      toast.success('PDF exported successfully');
-    } catch (error) {
-      console.error('Error exporting PDF:', error);
-      toast.error('Failed to export PDF. Please try again.');
-    } finally {
-      setIsPdfLoading(false);
-    }
   };
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-4">Reports</h1>
-        {/* Tab navigation and export buttons in same row */}
         <div className="flex items-center justify-between mb-4">
-          {/* Tab Navigation */}
+          <h1 className="text-2xl font-bold">Reports</h1>
+        </div>
+        
+        {/* Tab Navigation */}
+        <div className="flex items-center justify-between mb-4">
           <div className="flex border-b border-gray-200">
             {tabList.map(tab => (
               <button
@@ -797,7 +923,7 @@ export default function ReportsPage() {
             ))}
           </div>
           
-          {/* Export buttons on the far right */}
+          {/* Export buttons */}
           <div className="flex gap-2">
             <button
               onClick={exportToCSV}
@@ -812,7 +938,7 @@ export default function ReportsPage() {
               (activeTab === 'profitability' && salesData) ||
               (activeTab === 'overview' && generalData)) && !isLoading && (
               <button
-                onClick={handlePdfExport}
+                onClick={exportToPDF}
                 disabled={isPdfLoading}
                 className={`px-4 py-2 bg-red-500 text-white rounded ${isPdfLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
@@ -822,12 +948,11 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Date picker and search in separate row */}
+        {/* Date picker and search */}
         <div className="flex flex-wrap gap-4 mb-4">
           <div className="flex flex-wrap gap-4 flex-grow">
             {(activeTab === 'sales' || activeTab === 'vat' || activeTab === 'profitability' || activeTab === 'overview') && (
               <>
-                {/* Single Day Toggle */}
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 text-sm font-medium">
                     <input
@@ -839,7 +964,6 @@ export default function ReportsPage() {
                     Single Day
                   </label>
                 </div>
-                {/* Date Range Picker */}
                 <DateRangePicker
                   startDate={startDate}
                   endDate={endDate}
@@ -871,6 +995,7 @@ export default function ReportsPage() {
         </div>
       ) : (
         <div className="overflow-x-auto bg-white rounded-lg shadow">
+          {/* Sales Report Table */}
           {activeTab === 'sales' && salesData && (
             <table className="min-w-full bg-white">
               <thead>
@@ -888,8 +1013,8 @@ export default function ReportsPage() {
                   <tr key={`${item.id}-${item.timestamp}-${index}`}>
                     <td className="border px-4 py-2">{item.products?.name || 'Unknown'}</td>
                     <td className="border px-4 py-2">{item.quantity}</td>
+                    <td className="border px-4 py-2">{(item.total / item.quantity).toFixed(2)}</td>
                     <td className="border px-4 py-2">{item.total.toFixed(2)}</td>
-                    <td className="border px-4 py-2">{(item.total + item.vat_amount).toFixed(2)}</td>
                     <td className="border px-4 py-2">{item.payment_method}</td>
                     <td className="border px-4 py-2">{format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}</td>
                   </tr>
@@ -898,6 +1023,7 @@ export default function ReportsPage() {
             </table>
           )}
 
+          {/* Inventory Report Table */}
           {activeTab === 'inventory' && inventoryData && (
             <table className="min-w-full bg-white">
               <thead>
@@ -927,6 +1053,7 @@ export default function ReportsPage() {
             </table>
           )}
 
+          {/* VAT Report Table */}
           {activeTab === 'vat' && salesData && (
             <table className="min-w-full bg-white">
               <thead>
@@ -939,19 +1066,33 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {getFilteredVatData().map((item, index) => (
-                  <tr key={`${item.id}-${item.submission_type || 'sale'}-${index}`}>
-                    <td className="border px-4 py-2">{item.products?.name || 'Unknown'}</td>
-                    <td className="border px-4 py-2">{item.submission_type === 'input_vat' ? 'Purchase' : 'Sale'}</td>
-                    <td className="border px-4 py-2">{item.total.toFixed(2)}</td>
-                    <td className="border px-4 py-2">{item.vat_amount.toFixed(2)}</td>
-                    <td className="border px-4 py-2">{format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}</td>
+                {getFilteredVatData().length > 0 ? (
+                  getFilteredVatData().map((item) => (
+                    <tr key={`${item.id}-${item.submission_type || 'sale'}`}>
+                      <td className="border px-4 py-2">{item.products?.name || 'Unknown'}</td>
+                      <td className="border px-4 py-2">{item.submission_type === 'input_vat' ? 'Purchase' : 'Sale'}</td>
+                      <td className="border px-4 py-2">{item.total.toFixed(2)}</td>
+                      <td className="border px-4 py-2">{item.vat_amount.toFixed(2)}</td>
+                      <td className="border px-4 py-2">{format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="border px-4 py-2 text-center text-gray-500">
+                      <div className="py-4">
+                        <p className="text-sm">No VAT data available for the selected date range</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Input VAT data appears when you add stock with VAT amounts greater than 0
+                        </p>
+                      </div>
+                    </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           )}
 
+          {/* Profitability Report Table */}
           {activeTab === 'profitability' && salesData && (
             <table className="min-w-full bg-white">
               <thead>
@@ -977,12 +1118,12 @@ export default function ReportsPage() {
                   return (
                     <tr key={`${item.id}-${item.product_id}-${item.timestamp}`}>
                       <td className="border px-4 py-2">{item.products?.name || 'Unknown'}</td>
-                      <td className="border px-4 py-2 capitalize">{item.sale_mode || 'Unknown'}</td>
+                      <td className="border px-4 py-2">{item.sale_mode || 'Unknown'}</td>
                       <td className="border px-4 py-2">{item.quantity}</td>
-                      <td className="border px-4 py-2">KES {revenue.toFixed(2)}</td>
-                      <td className="border px-4 py-2">KES {cost.toFixed(2)}</td>
-                      <td className={`border px-4 py-2 ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>KES {profit.toFixed(2)}</td>
-                      <td className={`border px-4 py-2 ${profitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{profitMargin.toFixed(1)}%</td>
+                      <td className="border px-4 py-2">{revenue.toFixed(2)}</td>
+                      <td className="border px-4 py-2">{cost.toFixed(2)}</td>
+                      <td className="border px-4 py-2">{profit.toFixed(2)}</td>
+                      <td className="border px-4 py-2">{profitMargin.toFixed(1)}%</td>
                       <td className="border px-4 py-2">{format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}</td>
                     </tr>
                   );
@@ -991,6 +1132,7 @@ export default function ReportsPage() {
             </table>
           )}
 
+          {/* Overview Report Table */}
           {activeTab === 'overview' && generalData && (
             <table className="min-w-full bg-white">
               <thead>
@@ -1004,22 +1146,24 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {generalData.data
-                  .filter(item => {
-                    const matchesSearch = item.products?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      item.products?.sku?.toLowerCase().includes(searchQuery.toLowerCase());
-                    return matchesSearch;
-                  })
-                  .map((item, index) => (
+                {filteredGeneralData && filteredGeneralData.length > 0 ? (
+                  filteredGeneralData.map((item, index) => (
                     <tr key={`${item.id}-${item.timestamp}-${index}`}>
                       <td className="border px-4 py-2">{item.products?.name || 'Unknown'}</td>
                       <td className="border px-4 py-2">{item.quantity}</td>
+                      <td className="border px-4 py-2">{(item.total / item.quantity).toFixed(2)}</td>
                       <td className="border px-4 py-2">{item.total.toFixed(2)}</td>
-                      <td className="border px-4 py-2">{(item.total + item.vat_amount).toFixed(2)}</td>
                       <td className="border px-4 py-2">{item.payment_method}</td>
                       <td className="border px-4 py-2">{format(new Date(item.timestamp), 'dd/MM/yyyy HH:mm')}</td>
                     </tr>
-                  ))}
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="border px-4 py-2 text-center text-gray-500">
+                      No data available for the selected date range
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           )}

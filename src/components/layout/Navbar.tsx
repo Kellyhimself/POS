@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../providers/AuthProvider';
+import { useUnifiedService } from '../providers/UnifiedServiceProvider';
 import { useRouter } from 'next/navigation';
-import { syncService } from '@/lib/sync';
 import { cn } from '@/lib/utils';
 import { OfflineSignOutPrompt } from '../auth/OfflineSignOutPrompt';
+import { ModeIndicator } from '../ui/ModeIndicator';
 
 interface NavbarProps {
   isOnline: boolean;
@@ -18,6 +19,7 @@ const Navbar = ({ isOnline, storeName }: NavbarProps) => {
   const [isSignOutPromptOpen, setIsSignOutPromptOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { user, signOut } = useAuth();
+  const { clearOfflineData } = useUnifiedService();
   const router = useRouter();
 
   // Listen for sidebar state changes
@@ -67,7 +69,7 @@ const Navbar = ({ isOnline, storeName }: NavbarProps) => {
 
   const handleClearOfflineData = async () => {
     try {
-      await syncService.clearOfflineData();
+      await clearOfflineData();
       setIsConfirmingClear(false);
       setIsProfileOpen(false);
       // Optionally refresh the page or show a success message
@@ -89,16 +91,7 @@ const Navbar = ({ isOnline, storeName }: NavbarProps) => {
         </div>
         
         <div className="flex items-center space-x-4">
-          <div className={`flex items-center space-x-2 ${
-            isOnline ? 'text-green-600' : 'text-red-600'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${
-              isOnline ? 'bg-green-600' : 'bg-red-600'
-            }`}></div>
-            <span className="text-sm font-medium">
-              {isOnline ? 'Online' : 'Offline'}
-            </span>
-          </div>
+          <ModeIndicator />
           
           {/* Notifications */}
           <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">

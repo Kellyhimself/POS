@@ -1,33 +1,65 @@
 import { useEffect, useState } from 'react';
-import { useGlobalEtimsSync } from '@/lib/hooks/useGlobalEtimsSync';
-import { getPendingEtimsSubmissions } from '@/lib/etims/utils';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 export function PendingSubmissions() {
-  const { isSyncing, currentItem, totalItems, lastSyncTime, error, triggerManualSync } = useGlobalEtimsSync();
-  const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+  const { user } = useAuth();
+  const { currentMode, getPendingETIMSSubmissions, syncPendingETIMSSubmissions } = useUnifiedService();
+  const [pendingSubmissions, setPendingSubmissions] = useState<Record<string, unknown>[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
   const loadPendingSubmissions = async () => {
-    const submissions = await getPendingEtimsSubmissions();
-    setPendingSubmissions(submissions);
+    if (!user?.user_metadata?.store_id) return;
+    
+    try {
+      const submissions = await getPendingETIMSSubmissions(user.user_metadata.store_id);
+      setPendingSubmissions(submissions);
+    } catch (err) {
+      console.error('Error loading pending submissions:', err);
+      setError('Failed to load pending submissions');
+    }
   };
 
   useEffect(() => {
     loadPendingSubmissions();
-  }, [isSyncing]); // Reload when sync status changes
+  }, [user, currentMode]); // Reload when user or mode changes
 
   const handleSync = async () => {
-    await triggerManualSync();
-    await loadPendingSubmissions();
+    if (!user?.user_metadata?.store_id) return;
+    
+    try {
+      setIsSyncing(true);
+      setError(null);
+      
+      const result = await syncPendingETIMSSubmissions(user.user_metadata.store_id);
+      
+      if (result.success) {
+        setLastSyncTime(new Date());
+        await loadPendingSubmissions(); // Reload after sync
+      } else {
+        setError(result.error || 'Sync failed');
+      }
+    } catch (err) {
+      console.error('Error syncing ETIMS submissions:', err);
+      setError('Failed to sync submissions');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   return (
     <Card className="p-4 bg-[#2D3748] border-none">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold text-white">Pending eTIMS Submissions</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-white">Pending eTIMS Submissions</h2>
+          <p className="text-sm text-gray-300">Mode: {currentMode}</p>
+        </div>
         <Button 
           onClick={handleSync} 
           disabled={isSyncing}
@@ -50,14 +82,14 @@ export function PendingSubmissions() {
       {isSyncing && (
         <div className="mb-4">
           <p className="text-sm text-gray-300">
-            Syncing submission {currentItem} of {totalItems}
+            Syncing ETIMS submissions...
           </p>
         </div>
       )}
 
       {lastSyncTime && (
         <p className="text-sm text-gray-300 mb-4">
-          Last synced: {new Date(lastSyncTime).toLocaleString()}
+          Last synced: {lastSyncTime.toLocaleString()}
         </p>
       )}
 
@@ -67,17 +99,17 @@ export function PendingSubmissions() {
         ) : (
           pendingSubmissions.map((submission) => (
             <div 
-              key={submission.id} 
+              key={submission.id as string} 
               className="flex justify-between items-center p-2 bg-[#1A1F36] rounded-md"
             >
               <div>
-                <p className="font-medium text-white">{submission.invoice_number}</p>
+                <p className="font-medium text-white">{submission.invoice_number as string}</p>
                 <p className="text-sm text-gray-300">
-                  {new Date(submission.submitted_at).toLocaleString()}
+                  {new Date(submission.submitted_at as string).toLocaleString()}
                 </p>
               </div>
               <p className="text-sm font-medium text-white">
-                KES {submission.data?.total_amount?.toFixed(2) || '0.00'}
+                KES {(submission.data as any)?.total_amount?.toFixed(2) || '0.00'}
               </p>
             </div>
           ))

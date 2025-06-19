@@ -73,6 +73,8 @@ export class SyncService {
   // Initial data sync
   public async initialSync(store_id: string) {
     try {
+      console.log('🔄 SyncService.initialSync: Starting initial sync for store:', store_id);
+      
       // Fetch and cache products
       const { data: products, error: productsError } = await this.supabase
         .from('products')
@@ -80,12 +82,17 @@ export class SyncService {
         .eq('store_id', store_id);
 
       if (productsError) throw productsError;
-      if (products) await cacheProducts(products);
+      if (products) {
+        console.log('🔄 SyncService.initialSync: Caching products:', products.length, 'products');
+        await cacheProducts(products);
+        console.log('✅ SyncService.initialSync: Products cached successfully');
+      }
 
       // Process any pending syncs
       await this.sync();
+      console.log('✅ SyncService.initialSync: Initial sync completed');
     } catch (error) {
-      console.error('Initial sync failed:', error);
+      console.error('❌ SyncService.initialSync: Initial sync failed:', error);
       throw error;
     }
   }
@@ -250,12 +257,18 @@ export class SyncService {
   // Get products (works offline)
   public async getProducts(store_id: string) {
     try {
+      console.log('🔄 SyncService.getProducts: Fetching products for store:', store_id);
+      
       // Try to get from cache first
       const cachedProducts = await getCachedProducts(store_id);
-      if (cachedProducts.length > 0) return cachedProducts;
+      if (cachedProducts.length > 0) {
+        console.log('✅ SyncService.getProducts: Returning cached products:', cachedProducts.length, 'products');
+        return cachedProducts;
+      }
 
       // If no cache and online, fetch from server
       if (this.isOnline) {
+        console.log('🔄 SyncService.getProducts: No cache found, fetching from server');
         const { data, error } = await this.supabase
           .from('products')
           .select('*')
@@ -263,14 +276,17 @@ export class SyncService {
 
         if (error) throw error;
         if (data) {
+          console.log('🔄 SyncService.getProducts: Caching products from server:', data.length, 'products');
           await cacheProducts(data);
+          console.log('✅ SyncService.getProducts: Products cached and returned');
           return data;
         }
       }
 
+      console.log('⚠️ SyncService.getProducts: No products found');
       return [];
     } catch (error) {
-      console.error('Error getting products:', error);
+      console.error('❌ SyncService.getProducts: Error getting products:', error);
       throw error;
     }
   }
