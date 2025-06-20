@@ -1,3 +1,5 @@
+'use client'
+
 import { useState, useEffect } from 'react';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { Switch } from '@headlessui/react';
