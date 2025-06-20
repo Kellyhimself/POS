@@ -336,3 +336,217 @@ export default async function handler(req, res) {
 
 
 scan the entire codebase and document a detailed plan to modify the app into a mobile responsive one, considering different breakpoints like screen sizes below 480px, below 409px and more. make it detailed but on every migration/modification, the plan should make sure no functionality is interfered with. Priorities the main pages 
+
+on receipt print or download, automatically collaps the sheet.modify the
+
+
+i realised the online mode sale process in the /pos page is not updating the stock accordingly after a sell, remember the create sale rpc only adds a sell to the database but does not update the stock. here is the create sale rpc:
+
+-- Update create_sale function to include stock updates
+-- This ensures that when a sale is made, the product stock levels are automatically reduced
+
+CREATE OR REPLACE FUNCTION create_sale(
+  p_store_id UUID,
+  p_products JSONB,
+  p_payment_method TEXT,
+  p_total_amount NUMERIC,
+  p_vat_total NUMERIC,
+  p_is_sync BOOLEAN DEFAULT FALSE,
+  p_timestamp TIMESTAMP DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_first_transaction_id UUID;
+  v_product JSONB;
+  v_total DECIMAL;
+  v_product_id UUID;
+  v_quantity INTEGER;
+  v_display_price DECIMAL;
+  v_vat_amount DECIMAL;
+  v_error_context TEXT;
+  v_current_stock INTEGER;
+BEGIN
+  -- Start transaction
+  BEGIN
+    -- Log input parameters
+    RAISE NOTICE 'Starting create_sale with parameters: store_id=%, payment_method=%, total_amount=%, vat_total=%, is_sync=%, timestamp=%',
+      p_store_id, p_payment_method, p_total_amount, p_vat_total, p_is_sync, p_timestamp;
+    
+    -- Ensure p_products is an array
+    IF jsonb_typeof(p_products) != 'array' THEN
+      RAISE EXCEPTION 'Products parameter must be a JSON array';
+    END IF;
+
+    -- Get array length and log it
+    RAISE NOTICE 'Products array length: %', jsonb_array_length(p_products);
+    RAISE NOTICE 'Products array content: %', p_products;
+
+    -- Validate required parameters
+    IF p_store_id IS NULL THEN
+      RAISE EXCEPTION 'Store ID is required';
+    END IF;
+
+    IF p_products IS NULL OR jsonb_array_length(p_products) = 0 THEN
+      RAISE EXCEPTION 'Products array is required and must not be empty';
+    END IF;
+
+    IF p_payment_method IS NULL THEN
+      RAISE EXCEPTION 'Payment method is required';
+    END IF;
+
+    IF p_timestamp IS NULL THEN
+      RAISE EXCEPTION 'Timestamp is required';
+    END IF;
+
+    -- Process each product and create transaction records
+    FOR v_product IN SELECT * FROM jsonb_array_elements(p_products)
+    LOOP
+      -- Log product details
+      RAISE NOTICE 'Processing product: %', v_product;
+
+      -- Extract values from JSON, try both id and product_id fields
+      v_product_id := COALESCE(
+        (v_product->>'id')::UUID,
+        (v_product->>'product_id')::UUID
+      );
+      v_quantity := (v_product->>'quantity')::INTEGER;
+      v_display_price := (v_product->>'displayPrice')::DECIMAL;
+      v_vat_amount := (v_product->>'vat_amount')::DECIMAL;
+      
+      -- Log extracted values
+      RAISE NOTICE 'Extracted values: product_id=%, quantity=%, display_price=%, vat_amount=%',
+        v_product_id, v_quantity, v_display_price, v_vat_amount;
+      
+      -- Validate required fields
+      IF v_product_id IS NULL THEN
+        RAISE EXCEPTION 'Product ID is required for product: %', v_product;
+      END IF;
+      
+      IF v_quantity IS NULL THEN
+        RAISE EXCEPTION 'Quantity is required for product: %', v_product;
+      END IF;
+      
+      IF v_display_price IS NULL THEN
+        RAISE EXCEPTION 'Display price is required for product: %', v_product;
+      END IF;
+      
+      IF v_vat_amount IS NULL THEN
+        RAISE EXCEPTION 'VAT amount is required for product: %', v_product;
+      END IF;
+
+      -- Check current stock level
+      SELECT quantity INTO v_current_stock
+      FROM products
+      WHERE id = v_product_id AND store_id = p_store_id;
+
+      IF v_current_stock IS NULL THEN
+        RAISE EXCEPTION 'Product not found: %', v_product_id;
+      END IF;
+
+      -- Check if sufficient stock is available
+      IF v_current_stock < v_quantity THEN
+        RAISE EXCEPTION 'Insufficient stock for product %. Available: %, Requested: %', 
+          v_product_id, v_current_stock, v_quantity;
+      END IF;
+      
+      -- Calculate total for this product
+      v_total := v_display_price * v_quantity;
+
+      -- Log transaction details before insert
+      RAISE NOTICE 'Creating transaction: store_id=%, product_id=%, quantity=%, total=%, vat_amount=%, payment_method=%, timestamp=%',
+        p_store_id, v_product_id, v_quantity, v_total, v_vat_amount, p_payment_method, p_timestamp;
+
+      -- Create transaction item
+      INSERT INTO transactions (
+        store_id,
+        product_id,
+        quantity,
+        total,
+        vat_amount,
+        payment_method,
+        timestamp,
+        synced
+      )
+      VALUES (
+        p_store_id,
+        v_product_id,
+        v_quantity,
+        v_total,
+        v_vat_amount,
+        p_payment_method,
+        p_timestamp,
+        TRUE
+      )
+      RETURNING id INTO v_first_transaction_id;
+
+      -- Update product stock level (reduce by sold quantity)
+      UPDATE products
+      SET quantity = quantity - v_quantity
+      WHERE id = v_product_id AND store_id = p_store_id;
+
+      -- Log successful stock update
+      RAISE NOTICE 'Updated stock for product %. New quantity: %', 
+        v_product_id, v_current_stock - v_quantity;
+
+      -- Log successful insert
+      RAISE NOTICE 'Created transaction with ID: %', v_first_transaction_id;
+    END LOOP;
+
+    -- Log final success
+    RAISE NOTICE 'Successfully created all transactions and updated stock levels. First transaction ID: %', v_first_transaction_id;
+    RETURN v_first_transaction_id;
+  EXCEPTION
+    WHEN OTHERS THEN
+      -- Get detailed error context
+      GET STACKED DIAGNOSTICS v_error_context = PG_EXCEPTION_CONTEXT;
+      
+      -- Log the error details
+      RAISE NOTICE 'Error in create_sale: %', SQLERRM;
+      RAISE NOTICE 'Error context: %', v_error_context;
+      RAISE NOTICE 'Error detail: %', SQLSTATE;
+      RAISE NOTICE 'Products array that caused error: %', p_products;
+      
+      -- Re-raise the exception with context
+      RAISE EXCEPTION 'Error in create_sale: % (Context: %)', SQLERRM, v_error_context;
+  END;
+END;
+$$;
+
+-- Grant necessary permissions
+GRANT EXECUTE ON FUNCTION create_sale(UUID, JSONB, TEXT, NUMERIC, NUMERIC, BOOLEAN, TIMESTAMP) TO authenticated;
+
+But i would like the stock updates to be safe and optimistic with version tracking.
+
+Current Usage of Stock Update RPCs:
+1. update_stock - Basic stock update
+Used in: src/app/api/products/[id]/stock/route.ts (API endpoint for manual stock updates)
+Used in: src/app/api/supabase/edge-functions.ts (edge function wrapper)
+Purpose: Simple stock updates with basic validation
+2. update_stock_safe - Optimistic locking version
+Used in: src/lib/services/OnlineService.ts (line 121)
+Purpose: Stock updates with optimistic locking to prevent conflicts when multiple users update the same product
+Features: Includes version checking and user tracking
+3. update_stock_batch - Batch stock updates
+Used in: src/lib/sync/index.ts (line 444)
+Purpose: Bulk stock updates for syncing multiple products at once
+Used for: Offline-to-online synchronization
+The Issue with create_sale:
+The problem you identified is that the create_sale RPC function does NOT use any of these stock update functions. Instead, it directly updates the products table with a simple SQL UPDATE statement:
+Apply to Sidebar.tsx
+This means:
+No optimistic locking - Multiple concurrent sales could cause race conditions
+No audit trail - No tracking of who made the stock change
+No validation - No checks for negative stock or other business rules
+Recommendation:
+You should modify the create_sale RPC function to use the existing update_stock_safe RPC instead of direct SQL updates. This would provide:
+Consistency - All stock updates go through the same mechanism
+Safety - Optimistic locking prevents race conditions
+Audit trail - User tracking for stock changes
+Validation - Business rule enforcement
+
+
+make sure to intergrate with the new @dual-mode-implementation-plan.md  code

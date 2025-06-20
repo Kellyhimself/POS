@@ -13,13 +13,16 @@ import {
 import { toast } from 'sonner';
 import { ProductGrid } from '@/components/products/ProductGrid';
 import { Cart } from '@/components/cart/Cart';
-import { ReceiptActions } from '@/components/receipt/ReceiptActions';
+import { EnhancedReceiptActions } from '@/components/receipt/EnhancedReceiptActions';
+import { useReceiptSettings } from '@/hooks/useReceiptSettings';
 import { Database } from '@/types/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatEtimsInvoice } from '@/lib/etims/utils';
 import { submitEtimsInvoice } from '@/lib/etims/utils';
 import { useVatSettings } from '@/hooks/useVatSettings';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
+import { Button } from '@/components/ui/button';
+import { X } from 'lucide-react';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -87,12 +90,14 @@ const POSPage = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile money' | 'credit'>('cash');
   const { toggleVat, canToggleVat, calculatePrice, calculateVatAmount } = useVatSettings();
+  const { settings: receiptSettings } = useReceiptSettings();
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<TransactionResponse['receipt'] | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [shouldRefetchProducts, setShouldRefetchProducts] = useState(false);
   const [discountType, setDiscountType] = useState<'percentage' | 'cash' | null>(null);
   const [discountValue, setDiscountValue] = useState<number>(0);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const queryClient = useQueryClient();
 
   console.log('POS Page - Auth State:', { user, storeId, isOnline, currentMode });
@@ -192,9 +197,27 @@ const POSPage = () => {
   };
 
   // Handle cash amount change
-  const handleCashAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value) || 0;
-    setCashAmount(value);
+  const handleCashAmountChange = (amount: number) => {
+    setCashAmount(amount);
+  };
+
+  // Handle closing receipt dialog
+  const handleCloseReceipt = () => {
+    console.log('POSPage - handleCloseReceipt called, closing dialog');
+    setShowReceipt(false);
+    setReceiptData(null);
+    setCashAmount(0);
+    
+    // Reset form states for next sale
+    setPaymentMethod('cash');
+    setPhone('');
+    setDiscountType(null);
+    setDiscountValue(0);
+    
+    // Ensure processing state is reset
+    setIsProcessingPayment(false);
+    
+    console.log('POSPage - Receipt dialog closed, ready for next sale');
   };
 
   // Helper function to map Cart payment method to backend payment method
@@ -212,6 +235,8 @@ const POSPage = () => {
   // Payment mutation
   const paymentMutation = useMutation({
     mutationFn: async () => {
+      console.log('🔄 Payment mutation started, isPending:', paymentMutation.isPending);
+      setIsProcessingPayment(true);
       if (!storeId) throw new Error('No store selected');
 
       const invalidItems = cart.filter(
@@ -390,9 +415,12 @@ const POSPage = () => {
         }
       };
 
+      console.log('✅ Payment mutation completed successfully');
       return receiptData;
     },
     onSuccess: (transactionData: TransactionResponse) => {
+      console.log('🎉 Payment mutation onSuccess called');
+      setIsProcessingPayment(false);
       toast.success('Success', {
         description: 'Transaction completed successfully!',
       });
@@ -405,8 +433,13 @@ const POSPage = () => {
       setShouldRefetchProducts(true);
       // Reset the refetch flag after a short delay
       setTimeout(() => setShouldRefetchProducts(false), 100);
+      
+      // No page refresh needed - state is already clean for next sale
+      console.log('✅ Sale completed, ready for next transaction');
     },
     onError: (error: Error) => {
+      console.log('❌ Payment mutation onError called:', error.message);
+      setIsProcessingPayment(false);
       toast.error('Error', {
         description: error.message,
       });
@@ -437,8 +470,16 @@ const POSPage = () => {
                 onPaymentMethodChange={setPaymentMethod}
                 onVatToggle={handleVatToggle}
                 paymentMethod={paymentMethod}
-                onCheckout={() => paymentMutation.mutate()}
-                isProcessing={paymentMutation.isPending}
+                onCheckout={() => {
+                  console.log('🛒 Cart checkout clicked, paymentMutation.isPending:', paymentMutation.isPending, 'isProcessingPayment:', isProcessingPayment);
+                  // Prevent multiple submissions by checking both states
+                  if (!paymentMutation.isPending && !isProcessingPayment) {
+                    paymentMutation.mutate();
+                  } else {
+                    console.log('⚠️ Checkout blocked - payment already in progress');
+                  }
+                }}
+                isProcessing={isProcessingPayment || paymentMutation.isPending}
                 discountType={discountType}
                 discountValue={discountValue}
                 onDiscountTypeChange={setDiscountType}
@@ -449,46 +490,29 @@ const POSPage = () => {
         </div>
 
         {/* Receipt Dialog */}
-        <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-          <DialogContent className="max-w-2xl bg-[#1A1F36] text-white border-[#2D3748]">
+        <Dialog open={showReceipt}>
+          <DialogContent className="max-w-2xl lg:max-w-4xl max-h-[90vh] bg-[#1A1F36] text-white border-[#2D3748]" showCloseButton={false}>
             <DialogHeader>
-              <DialogTitle className="text-white">Transaction Complete</DialogTitle>
-              <DialogDescription className="text-gray-300">
-                Your sale has been completed successfully. Would you like to print or download the receipt?
-              </DialogDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-white">Transaction Complete</DialogTitle>
+                  <DialogDescription className="text-gray-300">
+                    Your sale has been completed successfully. Receipt will be automatically printed.
+                  </DialogDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCloseReceipt}
+                  className="text-gray-400 hover:text-white hover:bg-white/10"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </DialogHeader>
             {receiptData && (
               <div className="py-4">
-                {paymentMethod === 'cash' && (
-                  <div className="mb-4 space-y-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <label htmlFor="cashAmount" className="text-sm font-medium text-gray-300">
-                        Amount Received (KES)
-                      </label>
-                      <input
-                        id="cashAmount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={cashAmount}
-                        onChange={handleCashAmountChange}
-                        className="w-full sm:w-32 px-2 py-1 border border-[#2D3748] rounded bg-[#2D3748] text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0ABAB5]"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-sm text-gray-300">
-                      <span>Total Amount:</span>
-                      <span>KES {receiptData.sale.total.toFixed(2)}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm font-medium">
-                      <span className="text-gray-300">Balance:</span>
-                      <span className={calculateBalance() >= 0 ? 'text-green-400' : 'text-red-400'}>
-                        KES {calculateBalance().toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                )}
-                <ReceiptActions 
+                <EnhancedReceiptActions 
                   receipt={{
                     id: receiptData.sale.id,
                     items: receiptData.sale.products.map(product => ({
@@ -509,6 +533,16 @@ const POSPage = () => {
                     cash_amount: paymentMethod === 'cash' ? cashAmount : undefined,
                     balance: paymentMethod === 'cash' ? calculateBalance() : undefined
                   }}
+                  onComplete={handleCloseReceipt}
+                  autoPrint={receiptSettings.autoPrint}
+                  autoDownload={receiptSettings.autoDownload}
+                  enableAutoActions={
+                    // For cash payments, only enable auto-actions if cash amount is properly set
+                    paymentMethod === 'cash' 
+                      ? cashAmount > 0 && cashAmount >= receiptData.sale.total
+                      : true // For non-cash payments, always enable
+                  }
+                  onCashAmountChange={handleCashAmountChange}
                 />
               </div>
             )}

@@ -10,6 +10,15 @@ interface AppSettings {
   enable_vat_toggle_on_pos: boolean;
   vat_pricing_model: 'inclusive' | 'exclusive';
   default_vat_rate: number;
+  // Receipt settings
+  receipt_auto_print?: boolean;
+  receipt_auto_download?: boolean;
+  receipt_download_format?: 'pdf' | 'txt' | 'both';
+  receipt_print_delay?: number;
+  receipt_download_delay?: number;
+  receipt_show_inline?: boolean;
+  receipt_auto_close?: boolean;
+  receipt_close_delay?: number;
 }
 
 interface UnifiedServiceContextType {

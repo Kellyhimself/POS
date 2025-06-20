@@ -97,13 +97,13 @@ const Sidebar = () => {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Header with toggle button only */}
-      <div className="px-4 py-3 border-b border-white/10">
+      <div className="px-4 py-3 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-end">
           {!isMobile && (
             <Button
               variant="ghost"
               size="icon"
-              className="text-white hover:bg-white/10"
+              className="text-gray-600 hover:bg-gray-100"
               onClick={() => setIsExpanded(!isExpanded)}
             >
               {isExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -123,7 +123,7 @@ const Sidebar = () => {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "group flex items-center px-4 py-3 text-sm rounded-lg transition-colors relative",
+                  "group flex items-center px-4 py-3 text-sm rounded-xl transition-colors relative",
                   pathname === item.href 
                     ? 'bg-[#0ABAB5] text-white' 
                     : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
@@ -157,7 +157,7 @@ const Sidebar = () => {
           <Link
             href="/settings"
             className={cn(
-              "group flex items-center px-4 py-3 text-sm rounded-lg transition-colors relative",
+              "group flex items-center px-4 py-3 text-sm rounded-xl transition-colors relative",
               pathname === '/settings'
                 ? 'bg-[#0ABAB5] text-white' 
                 : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
@@ -199,7 +199,7 @@ const Sidebar = () => {
         {/* Mobile Sidebar */}
         <div
           className={cn(
-            'fixed inset-y-0 left-0 z-40 w-64 bg-[#1A1F36] text-white transform transition-transform duration-200 ease-in-out lg:translate-x-0',
+            'fixed inset-y-0 left-0 z-40 w-48 bg-[#1A1F36] text-white transform transition-transform duration-200 ease-in-out lg:translate-x-0',
             isMobileOpen ? 'translate-x-0' : '-translate-x-full'
           )}
         >
@@ -250,7 +250,7 @@ const Sidebar = () => {
     <div 
       className={cn(
         "bg-[#1A1F36] text-white h-screen fixed left-0 top-0 transition-all duration-300 z-30",
-        isExpanded ? "w-64" : "w-16"
+        isExpanded ? "w-48" : "w-14"
       )}
       onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}

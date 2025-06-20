@@ -8,12 +8,13 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSettings } from '@/components/providers/SettingsProvider';
-import { Loader2, RefreshCw, Wifi, WifiOff, Calculator, Settings as SettingsIcon, Database } from 'lucide-react';
+import { Loader2, RefreshCw, Wifi, WifiOff, Calculator, Settings as SettingsIcon, Database, Receipt } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { ModeSettings } from '@/components/settings/ModeSettings';
+import { ReceiptSettings } from '@/components/settings/ReceiptSettings';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'vat' | 'mode' | 'sync' | 'advanced'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'vat' | 'mode' | 'receipt' | 'sync' | 'advanced'>('general');
   const { settings, isLoading, isSyncing, updateSettings, syncSettings } = useSettings();
   const { isOnline } = useAuth();
 
@@ -21,6 +22,7 @@ export default function SettingsPage() {
     { key: 'general', label: 'General', icon: SettingsIcon },
     { key: 'vat', label: 'VAT Settings', icon: Calculator },
     { key: 'mode', label: 'Operation Mode', icon: isOnline ? Wifi : WifiOff },
+    { key: 'receipt', label: 'Receipt Settings', icon: Receipt },
     { key: 'sync', label: 'Sync Settings', icon: RefreshCw },
     { key: 'advanced', label: 'Advanced', icon: Database },
   ];
@@ -170,6 +172,24 @@ export default function SettingsPage() {
           <div className="flex flex-col md:flex-row gap-6">
             <div className="flex-1">
               <ModeSettings />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderReceiptSettings = () => (
+    <div className="space-y-6">
+      <Card className="border-none shadow-md">
+        <CardHeader className="bg-primary/5">
+          <CardTitle className="text-xl text-primary">Receipt Settings</CardTitle>
+          <CardDescription>Configure how receipts are handled after each sale</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1">
+              <ReceiptSettings />
             </div>
           </div>
         </CardContent>
@@ -340,6 +360,7 @@ export default function SettingsPage() {
         {activeTab === 'general' && renderGeneralSettings()}
         {activeTab === 'vat' && renderVatSettings()}
         {activeTab === 'mode' && renderModeSettings()}
+        {activeTab === 'receipt' && renderReceiptSettings()}
         {activeTab === 'sync' && renderSyncSettings()}
         {activeTab === 'advanced' && renderAdvancedSettings()}
       </div>

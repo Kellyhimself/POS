@@ -154,6 +154,8 @@ export default function ReportsPage() {
   const { currentMode, generateReports, generateInventoryReport, generateInputVatReport, generalReport } = useUnifiedService();
   const { isOnline } = useAuth();
   const [generalData, setGeneralData] = useState<ReportData | null>(null);
+  const [pdfLibrariesLoaded, setPdfLibrariesLoaded] = useState(false);
+  const [pdfLibraries, setPdfLibraries] = useState<{ jsPDF: any; autoTable: any } | null>(null);
   
   const tabList = [
     { key: 'sales', label: 'Sales Report' },
@@ -176,6 +178,31 @@ export default function ReportsPage() {
       return;
     }
   }, [user, session]);
+
+  // Pre-load PDF libraries for offline support
+  useEffect(() => {
+    const loadPdfLibraries = async () => {
+      try {
+        console.log('📄 Loading PDF libraries for offline support...');
+        const [jsPDFModule, autoTableModule] = await Promise.all([
+          import('jspdf'),
+          import('jspdf-autotable')
+        ]);
+        
+        setPdfLibraries({
+          jsPDF: jsPDFModule.default,
+          autoTable: autoTableModule.default
+        });
+        setPdfLibrariesLoaded(true);
+        console.log('📄 PDF libraries loaded successfully');
+      } catch (error) {
+        console.error('Error pre-loading PDF libraries:', error);
+        // Don't show error toast here as it might be expected in offline mode
+      }
+    };
+
+    loadPdfLibraries();
+  }, []);
 
   // Data fetching effect
   useEffect(() => {
@@ -410,11 +437,37 @@ export default function ReportsPage() {
 
     setIsPdfLoading(true);
     try {
-      // Dynamic imports to avoid HMR issues
-      const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-        import('jspdf'),
-        import('jspdf-autotable')
-      ]);
+      // Check if we're offline and provide a helpful message
+      if (!isOnline) {
+        console.log('📄 PDF Export: Attempting to export in offline mode');
+      }
+
+      // Use pre-loaded libraries if available, otherwise try dynamic import
+      let jsPDF, autoTable;
+      
+      if (pdfLibrariesLoaded && pdfLibraries) {
+        jsPDF = pdfLibraries.jsPDF;
+        autoTable = pdfLibraries.autoTable;
+        console.log('📄 Using pre-loaded PDF libraries');
+      } else {
+        try {
+          console.log('📄 Loading PDF libraries dynamically...');
+          const [jsPDFModule, autoTableModule] = await Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable')
+          ]);
+          jsPDF = jsPDFModule.default;
+          autoTable = autoTableModule.default;
+        } catch (importError) {
+          console.error('Error importing PDF libraries:', importError);
+          if (!isOnline) {
+            toast.error('PDF export requires internet connection to load libraries. Please try again when online.');
+          } else {
+            toast.error('Failed to load PDF libraries. Please refresh the page and try again.');
+          }
+          return;
+        }
+      }
 
       const doc = new jsPDF();
       
@@ -939,8 +992,9 @@ export default function ReportsPage() {
               (activeTab === 'overview' && generalData)) && !isLoading && (
               <button
                 onClick={exportToPDF}
-                disabled={isPdfLoading}
-                className={`px-4 py-2 bg-red-500 text-white rounded ${isPdfLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={isPdfLoading || (!pdfLibrariesLoaded && !isOnline)}
+                className={`px-4 py-2 bg-red-500 text-white rounded ${(isPdfLoading || (!pdfLibrariesLoaded && !isOnline)) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={(!pdfLibrariesLoaded && !isOnline) ? 'PDF libraries not loaded. Please try again when online.' : ''}
               >
                 {isPdfLoading ? 'Generating PDF...' : 'Export to PDF'}
               </button>
