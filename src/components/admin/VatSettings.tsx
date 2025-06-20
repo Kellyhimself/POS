@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
-import { Switch } from '@headlessui/react';
-import { toast } from 'react-hot-toast';
+import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
+
 
 interface VatSettings {
   enable_vat_toggle_on_pos: boolean;
@@ -66,18 +67,8 @@ export function VatSettings() {
           </div>
           <Switch
             checked={settings.enable_vat_toggle_on_pos}
-            onChange={(checked) => setSettings(prev => ({ ...prev, enable_vat_toggle_on_pos: checked }))}
-            className={`${
-              settings.enable_vat_toggle_on_pos ? 'bg-blue-600' : 'bg-gray-200'
-            } relative inline-flex h-6 w-11 items-center rounded-full`}
-          >
-            <span className="sr-only">Enable VAT</span>
-            <span
-              className={`${
-                settings.enable_vat_toggle_on_pos ? 'translate-x-6' : 'translate-x-1'
-              } inline-block h-4 w-4 transform rounded-full bg-white transition`}
-            />
-          </Switch>
+            onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enable_vat_toggle_on_pos: checked }))}
+          />
         </div>
 
         {/* Pricing Model Setting */}
