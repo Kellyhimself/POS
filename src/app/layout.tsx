@@ -7,11 +7,14 @@ import { AuthProvider } from '@/components/providers/AuthProvider';
 import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/providers/AuthProvider';
-import { ModeIndicator } from '@/components/ui/ModeIndicator';
 import { SettingsProvider } from '@/components/providers/SettingsProvider';
 import { UnifiedServiceProvider } from '@/components/providers/UnifiedServiceProvider';
 import { getUnifiedService } from '@/lib/services/UnifiedService';
 import { getModeManager } from '@/lib/mode/ModeManager';
+import Sidebar from '@/components/layout/Sidebar';
+import Header from '@/components/layout/Header';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { cn } from '@/lib/utils';
 
 import * as React from 'react';
 
@@ -19,7 +22,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, loading } = useAuth();
+  const { user, storeName, loading, isOnline } = useAuth();
 
   // Initialize unified service and mode manager
   React.useEffect(() => {
@@ -66,14 +69,55 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (loading) {
-    return null;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
   }
 
+  // For login page, don't show sidebar/header
   if (pathname === '/login') {
     return <>{children}</>;
   }
 
-  return <>{children}</>;
+  // For authenticated pages, show the full layout
+  if (user) {
+    return (
+      <div className="flex h-screen bg-gray-100 overflow-hidden">
+        {/* Sidebar - Fixed positioning with proper z-index */}
+        <Sidebar />
+        
+        {/* Main Content Area - Properly positioned to avoid sidebar overlap */}
+        <div className="flex-1 flex flex-col min-w-0 ml-16">
+          {/* Header - Sticky at top of main content area */}
+          <Header isOnline={isOnline} storeName={storeName || undefined} />
+          
+          {/* Main content - Scrollable area below header */}
+          <main className={cn(
+            "flex-1 overflow-auto transition-all duration-300",
+            // Mobile: full padding
+            "p-4",
+            // Tablet: increased padding
+            "md:p-6",
+            // Desktop: maximum padding
+            "lg:p-8",
+            // Account for header height
+            "pt-20"
+          )}>
+            {children}
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // For unauthenticated pages (except login), show loading
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <LoadingSpinner />
+    </div>
+  );
 }
 
 export default function RootLayout({
@@ -131,7 +175,6 @@ export default function RootLayout({
         <AuthProvider>
           <UnifiedServiceProvider>
             <SettingsProvider>
-              <ModeIndicator />
               <ReactQueryProvider>
                 <RootLayoutContent>{children}</RootLayoutContent>
                 <Toaster />

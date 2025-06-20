@@ -1,51 +1,24 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../providers/AuthProvider';
 import { useUnifiedService } from '../providers/UnifiedServiceProvider';
 import { useRouter } from 'next/navigation';
-import { cn } from '@/lib/utils';
 import { OfflineSignOutPrompt } from '../auth/OfflineSignOutPrompt';
 import { ModeIndicator } from '../ui/ModeIndicator';
 
-interface NavbarProps {
+interface HeaderProps {
   isOnline: boolean;
   storeName?: string;
 }
 
-const Navbar = ({ isOnline, storeName }: NavbarProps) => {
+const Header = ({ isOnline, storeName }: HeaderProps) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const [isSignOutPromptOpen, setIsSignOutPromptOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const { user, signOut } = useAuth();
   const { clearOfflineData } = useUnifiedService();
   const router = useRouter();
-
-  // Listen for sidebar state changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const preference = localStorage.getItem('sidebarPreference');
-      setSidebarOpen(preference === 'open');
-    };
-
-    // Initial check
-    handleStorageChange();
-
-    // Listen for changes from other tabs/windows
-    window.addEventListener('storage', handleStorageChange);
-
-    // Listen for changes from the current window
-    const handleCustomEvent = (e: CustomEvent) => {
-      setSidebarOpen(e.detail === 'open');
-    };
-    window.addEventListener('sidebarChange', handleCustomEvent as EventListener);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('sidebarChange', handleCustomEvent as EventListener);
-    };
-  }, []);
 
   // Try to get first name from user metadata, fallback to email or 'User'
   const firstName = user?.user_metadata?.first_name || user?.user_metadata?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
@@ -82,15 +55,13 @@ const Navbar = ({ isOnline, storeName }: NavbarProps) => {
 
   return (
     <>
-      <div className={cn(
-        "absolute top-0 right-0 h-16 bg-white border-b border-gray-200 px-6 flex items-center justify-between z-50 transition-all duration-300",
-        sidebarOpen ? "left-0 lg:left-64" : "left-0 lg:left-20"
-      )}>
+      <header className="sticky top-0 h-16 bg-white border-b border-gray-200 px-6 flex items-center justify-between z-40">
         <div className="flex items-center">
           <h2 className="text-lg font-medium text-gray-800">{storeName || 'Loading...'}</h2>
         </div>
         
         <div className="flex items-center space-x-4">
+          {/* Mode Indicator */}
           <ModeIndicator />
           
           {/* Notifications */}
@@ -134,7 +105,7 @@ const Navbar = ({ isOnline, storeName }: NavbarProps) => {
             )}
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Confirmation Dialog */}
       {isConfirmingClear && (
@@ -174,4 +145,4 @@ const Navbar = ({ isOnline, storeName }: NavbarProps) => {
   );
 };
 
-export default Navbar; 
+export default Header; 

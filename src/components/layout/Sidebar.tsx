@@ -58,8 +58,9 @@ const navigationItems: NavItem[] = [
 
 const Sidebar = () => {
   const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const { user, signOut } = useAuth();
   const router = useRouter();
 
@@ -70,28 +71,14 @@ const Sidebar = () => {
     return item.requiredRoles.includes(userRole);
   };
 
-  // Check if user has a preference stored
-  useEffect(() => {
-    const savedPreference = localStorage.getItem('sidebarPreference');
-    if (savedPreference) {
-      setIsOpen(savedPreference === 'open');
-    }
-  }, []);
-
   // Handle window resize
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
-      if (window.innerWidth < 1024) {
-        setIsOpen(false);
-      } else {
-        // Restore user preference on desktop
-        const savedPreference = localStorage.getItem('sidebarPreference');
-        if (savedPreference) {
-          setIsOpen(savedPreference === 'open');
-        } else {
-          setIsOpen(true);
-        }
+      const isMobileView = window.innerWidth < 1024;
+      setIsMobile(isMobileView);
+      if (isMobileView) {
+        setIsExpanded(false);
+        setIsMobileOpen(false);
       }
     };
 
@@ -99,15 +86,6 @@ const Sidebar = () => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
-
-  // Save user preference
-  const toggleSidebar = () => {
-    const newState = !isOpen;
-    setIsOpen(newState);
-    localStorage.setItem('sidebarPreference', newState ? 'open' : 'closed');
-    // Dispatch custom event for the layout to listen to
-    window.dispatchEvent(new CustomEvent('sidebarChange', { detail: newState ? 'open' : 'closed' }));
-  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -118,30 +96,24 @@ const Sidebar = () => {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      {/* Header with title and toggle button */}
+      {/* Header with toggle button only */}
       <div className="px-4 py-3 border-b border-white/10">
-        <div className="flex items-center justify-between">
-          <h1 className={cn(
-            "text-xl font-bold text-white transition-all duration-300",
-            !isOpen && "opacity-0 w-0"
-          )}>
-            Navigation
-          </h1>
+        <div className="flex items-center justify-end">
           {!isMobile && (
             <Button
               variant="ghost"
               size="icon"
               className="text-white hover:bg-white/10"
-              onClick={toggleSidebar}
+              onClick={() => setIsExpanded(!isExpanded)}
             >
-              {isOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              {isExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             </Button>
           )}
         </div>
       </div>
       
-      {/* Navigation items - distributed throughout the available space */}
-      <div className="px-4 py-3">
+      {/* Navigation items */}
+      <div className="px-4 py-3 flex-1">
         <nav className="space-y-1">
           {navigationItems.filter(item => item.name !== 'Settings').map((item) => {
             if (!hasAccess(item)) return null;
@@ -155,21 +127,21 @@ const Sidebar = () => {
                   pathname === item.href 
                     ? 'bg-[#0ABAB5] text-white' 
                     : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
-                  !isOpen && "justify-center"
+                  !isExpanded && "justify-center"
                 )}
               >
                 <span className={cn(
                   "transition-all duration-300",
-                  !isOpen && "mr-0"
+                  !isExpanded && "mr-0"
                 )}>{item.icon}</span>
                 <span className={cn(
                   "transition-all duration-300",
-                  !isOpen && "opacity-0 w-0"
+                  !isExpanded && "opacity-0 w-0"
                 )}>
                   {item.name}
                 </span>
-                {!isOpen && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                {!isExpanded && (
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
                     {item.name}
                   </div>
                 )}
@@ -179,12 +151,9 @@ const Sidebar = () => {
         </nav>
       </div>
 
-      {/* Spacer to push Settings up */}
-      <div className="h-8"></div>
-
-      {/* Settings menu item positioned at the bottom */}
+      {/* Settings menu item positioned at the bottom with reduced spacing */}
       {hasAccess(navigationItems.find(item => item.name === 'Settings')!) && (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-20">
           <Link
             href="/settings"
             className={cn(
@@ -192,21 +161,21 @@ const Sidebar = () => {
               pathname === '/settings'
                 ? 'bg-[#0ABAB5] text-white' 
                 : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
-              !isOpen && "justify-center"
+              !isExpanded && "justify-center"
             )}
           >
             <span className={cn(
               "transition-all duration-300",
-              !isOpen && "mr-0"
+              !isExpanded && "mr-0"
             )}>⚙️</span>
             <span className={cn(
               "transition-all duration-300",
-              !isOpen && "opacity-0 w-0"
+              !isExpanded && "opacity-0 w-0"
             )}>
               Settings
             </span>
-            {!isOpen && (
-              <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            {!isExpanded && (
+              <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
                 Settings
               </div>
             )}
@@ -221,17 +190,17 @@ const Sidebar = () => {
       <>
         {/* Mobile menu button */}
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => setIsMobileOpen(!isMobileOpen)}
           className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-md bg-[#1A1F36] text-white"
         >
-          {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          {isMobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
 
         {/* Mobile Sidebar */}
         <div
           className={cn(
             'fixed inset-y-0 left-0 z-40 w-64 bg-[#1A1F36] text-white transform transition-transform duration-200 ease-in-out lg:translate-x-0',
-            isOpen ? 'translate-x-0' : '-translate-x-full'
+            isMobileOpen ? 'translate-x-0' : '-translate-x-full'
           )}
         >
           <div className="flex flex-col h-full">
@@ -267,10 +236,10 @@ const Sidebar = () => {
         </div>
 
         {/* Overlay */}
-        {isOpen && (
+        {isMobileOpen && (
           <div
             className="fixed inset-0 bg-black/50 z-30 lg:hidden"
-            onClick={() => setIsOpen(false)}
+            onClick={() => setIsMobileOpen(false)}
           />
         )}
       </>
@@ -278,10 +247,14 @@ const Sidebar = () => {
   }
 
   return (
-    <div className={cn(
-      "bg-[#1A1F36] text-white h-screen fixed left-0 top-0 pt-1 transition-all duration-300",
-      isOpen ? "w-64" : "w-20"
-    )}>
+    <div 
+      className={cn(
+        "bg-[#1A1F36] text-white h-screen fixed left-0 top-0 transition-all duration-300 z-30",
+        isExpanded ? "w-64" : "w-16"
+      )}
+      onMouseEnter={() => setIsExpanded(true)}
+      onMouseLeave={() => setIsExpanded(false)}
+    >
       <SidebarContent />
     </div>
   );
