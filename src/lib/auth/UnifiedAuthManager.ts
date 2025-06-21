@@ -120,7 +120,8 @@ export class UnifiedAuthManager {
   }
 
   private async offlineSignIn(email: string, password: string): Promise<UnifiedSession> {
-    const storedSession = this.getStoredSession();
+    // First try to get a valid stored session
+    let storedSession = this.getStoredSession();
     const storedCredentials = await this.getStoredCredentials();
 
     console.log('🔐 UnifiedAuthManager: Attempting offline sign in:', {
@@ -135,25 +136,33 @@ export class UnifiedAuthManager {
       } : null
     });
 
+    // If no valid session found, check for signed-out session
     if (!storedSession) {
-      console.error('❌ UnifiedAuthManager: No stored session found for offline mode');
-      console.log('🔍 UnifiedAuthManager: Checking localStorage for session...');
+      console.log('🔍 UnifiedAuthManager: No valid session found, checking for signed-out session...');
       const rawStored = localStorage.getItem('unified_session');
       if (rawStored) {
-        console.log('📋 UnifiedAuthManager: Found raw session data in localStorage');
         try {
           const parsed = JSON.parse(rawStored);
-          console.log('📋 UnifiedAuthManager: Parsed session:', {
+          console.log('📋 UnifiedAuthManager: Found raw session data in localStorage:', {
             hasExpiresAt: !!parsed.expiresAt,
             expiresAt: parsed.expiresAt,
-            isExpired: parsed.expiresAt < Date.now() / 1000
+            isExpired: parsed.expiresAt < Date.now() / 1000,
+            signedOut: parsed.signedOut
           });
+          
+          // If session is marked as signed out, we can still use it for offline sign in
+          if (parsed.signedOut && parsed.expiresAt && parsed.expiresAt > Date.now() / 1000) {
+            console.log('✅ UnifiedAuthManager: Found signed-out session, will clear flag during sign in');
+            storedSession = parsed;
+          }
         } catch (e) {
           console.error('❌ UnifiedAuthManager: Error parsing stored session:', e);
         }
-      } else {
-        console.log('📋 UnifiedAuthManager: No session data found in localStorage');
       }
+    }
+
+    if (!storedSession) {
+      console.error('❌ UnifiedAuthManager: No stored session found for offline mode');
       throw new Error('No offline session available. Please sign in while online first.');
     }
 
@@ -198,6 +207,14 @@ export class UnifiedAuthManager {
       expiresAt: Date.now() / 1000 + (30 * 24 * 60 * 60) // 30 days
     };
 
+    // Clear the signedOut flag from stored session since user is signing back in
+    const updatedStoredSession = {
+      ...storedSession,
+      signedOut: false
+    };
+    localStorage.setItem('unified_session', JSON.stringify(updatedStoredSession));
+    console.log('✅ UnifiedAuthManager: Cleared signedOut flag from stored session');
+
     this.currentSession = offlineSession;
     console.log('✅ UnifiedAuthManager: Offline sign in successful:', {
       userId: offlineSession.userId,
@@ -216,10 +233,22 @@ export class UnifiedAuthManager {
   }
 
   private async offlineSignOut(): Promise<void> {
-    // Only clear the current session, but keep stored session and credentials for future offline access
-    console.log('🔐 UnifiedAuthManager: Offline sign out - clearing current session only');
+    // Mark the stored session as signed out instead of clearing it completely
+    console.log('🔐 UnifiedAuthManager: Offline sign out - marking session as signed out');
     this.currentSession = null;
-    // Don't clear stored session or credentials - they should remain for future offline access
+    
+    // Mark stored session as signed out but keep it for future access
+    const storedSession = this.getStoredSession();
+    if (storedSession) {
+      const signedOutSession = {
+        ...storedSession,
+        signedOut: true
+      };
+      localStorage.setItem('unified_session', JSON.stringify(signedOutSession));
+      console.log('✅ UnifiedAuthManager: Marked stored session as signed out');
+    }
+    
+    // Don't clear stored credentials - they should remain for future offline access
   }
 
   // Session storage methods
@@ -230,7 +259,14 @@ export class UnifiedAuthManager {
         storeId: session.storeId,
         mode: session.mode
       });
-      localStorage.setItem('unified_session', JSON.stringify(session));
+      
+      // Ensure the session doesn't have the signedOut flag
+      const cleanSession = {
+        ...session,
+        signedOut: false
+      };
+      
+      localStorage.setItem('unified_session', JSON.stringify(cleanSession));
     } catch (error) {
       console.error('❌ UnifiedAuthManager: Error storing session:', error);
     }
@@ -245,6 +281,12 @@ export class UnifiedAuthManager {
       }
 
       const session = JSON.parse(stored);
+      
+      // Check if session is marked as signed out
+      if (session.signedOut) {
+        console.log('🚫 UnifiedAuthManager: Stored session is marked as signed out');
+        return null;
+      }
       
       // Check if session is expired
       if (session.expiresAt && session.expiresAt < Date.now() / 1000) {
@@ -366,6 +408,8 @@ export class UnifiedAuthManager {
     
     try {
       const session = JSON.parse(stored);
+      // Consider both active and signed-out sessions as available
+      // Signed-out sessions can be reactivated during offline sign-in
       return session.expiresAt && session.expiresAt > Date.now() / 1000;
     } catch {
       return false;

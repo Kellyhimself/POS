@@ -67,6 +67,21 @@ export function SimplifiedAuthProvider({ children }: { children: React.ReactNode
           setStoreName(storedSession.userMetadata.store_name || null);
         } else {
           console.log('ℹ️ SimplifiedAuthProvider: No stored session found');
+          
+          // In offline mode, check if there's a signed-out session that can be reactivated
+          if (!isOnline) {
+            const rawStored = localStorage.getItem('unified_session');
+            if (rawStored) {
+              try {
+                const parsed = JSON.parse(rawStored);
+                if (parsed.signedOut && parsed.expiresAt && parsed.expiresAt > Date.now() / 1000) {
+                  console.log('ℹ️ SimplifiedAuthProvider: Found signed-out session available for offline sign-in');
+                }
+              } catch (e) {
+                console.error('❌ SimplifiedAuthProvider: Error parsing stored session:', e);
+              }
+            }
+          }
         }
       } catch (error) {
         console.error('❌ SimplifiedAuthProvider: Error during initialization:', error);
@@ -102,11 +117,17 @@ export function SimplifiedAuthProvider({ children }: { children: React.ReactNode
   // Navigation effect
   useEffect(() => {
     if (!loading) {
+      console.log('🔄 SimplifiedAuthProvider: Navigation effect running', {
+        hasSession: !!session,
+        pathname,
+        mode
+      });
+      
       if (session && ['/login', '/signup'].includes(pathname)) {
         console.log('🔄 SimplifiedAuthProvider: Redirecting to dashboard');
         router.push('/dashboard');
       } else if (!session && !['/login', '/signup', '/invite'].includes(pathname)) {
-        console.log('🔄 SimplifiedAuthProvider: Redirecting to login');
+        console.log('🔄 SimplifiedAuthProvider: Redirecting to login - no session found');
         router.push('/login');
       }
     }
@@ -234,8 +255,9 @@ export function SimplifiedAuthProvider({ children }: { children: React.ReactNode
       
       console.log('✅ SimplifiedAuthProvider: Sign out successful');
       
-      // Redirect to login page
-      router.push('/login');
+      // Use window.location.href for hard redirect to ensure it works in all cases
+      console.log('🔄 SimplifiedAuthProvider: Redirecting to login page');
+      window.location.href = '/login';
       
       return { error: null };
     } catch (error) {
