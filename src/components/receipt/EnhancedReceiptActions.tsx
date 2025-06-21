@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Printer, Download, FileText } from 'lucide-react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useReceiptSettings } from '@/hooks/useReceiptSettings';
 
 interface ReceiptItem {
@@ -44,7 +44,7 @@ export function EnhancedReceiptActions({
   enableAutoActions = true, 
   onCashAmountChange 
 }: EnhancedReceiptActionsProps) {
-  const { storeName, user } = useAuth();
+  const { storeName, user } = useSimplifiedAuth();
   const { settings: receiptSettings } = useReceiptSettings();
   const userMetadata = user?.user_metadata || {};
   const vatRegistrationNumber = userMetadata.vat_registration_number || 'Pending Registration';
@@ -488,170 +488,174 @@ Please come again
   };
 
   return (
-    <div className="flex flex-col lg:flex-row items-start gap-8 h-[70vh]">
-      {/* Inline Receipt Display - Only show if enabled in settings */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full max-h-[70vh] overflow-hidden">
+      {/* Left Container - Inline Receipt Display */}
       {receiptSettings.showInlineReceipt && (
-        <div ref={receiptRef} className="flex-1 max-w-md bg-white text-black p-4 rounded-lg shadow-lg overflow-y-auto max-h-full">
-          <div className="text-center mb-4">
-            <h3 className="text-lg font-bold">{storeName || 'Store'}</h3>
-            <p className="text-sm text-gray-600">VAT Registration No: {vatRegistrationNumber}</p>
-            <p className="text-sm font-semibold">Receipt #{receipt.id}</p>
-            <p className="text-xs text-gray-500">{new Date().toLocaleString()}</p>
-            <div className="mt-2 p-2 bg-green-50 rounded">
-              <p className="text-xs font-bold text-green-700">VAT INCLUDED IN PRICES</p>
-              <p className="text-xs text-green-600">VAT Rate: 16%</p>
+        <div className="flex items-center justify-center h-full overflow-hidden">
+          <div ref={receiptRef} className="w-full max-w-md bg-white text-black p-4 rounded-xl shadow-lg overflow-y-auto h-full border border-gray-200">
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-bold">{storeName || 'Store'}</h3>
+              <p className="text-sm text-gray-600">VAT Registration No: {vatRegistrationNumber || 'Pending Registration'}</p>
+              <p className="text-sm font-semibold">Receipt #{receipt.id}</p>
+              <p className="text-xs text-gray-500">{new Date().toLocaleString()}</p>
+              <div className="mt-2 p-2 bg-green-50 rounded">
+                <p className="text-xs font-bold text-green-700">VAT INCLUDED IN PRICES</p>
+                <p className="text-xs text-green-600">VAT Rate: 16%</p>
+              </div>
             </div>
-          </div>
-          
-          <div className="border-t border-b border-gray-300 py-2 mb-4">
-            {receipt.items.map((item, index) => (
-              <div key={index} className="flex justify-between items-start mb-2">
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{item.name}</p>
-                  <p className="text-xs text-gray-600">Qty: {item.quantity} x KES {item.price.toFixed(2)}</p>
-                  {item.vat_amount > 0 && (
-                    <p className="text-xs text-gray-500">VAT: KES {item.vat_amount.toFixed(2)}</p>
-                  )}
+            
+            <div className="border-t border-b border-gray-300 py-2 mb-4">
+              {receipt.items.map((item, index) => (
+                <div key={index} className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{item.name}</p>
+                    <p className="text-xs text-gray-600">Qty: {item.quantity} x KES {item.price.toFixed(2)}</p>
+                    {item.vat_amount > 0 && (
+                      <p className="text-xs text-gray-500">VAT: KES {item.vat_amount.toFixed(2)}</p>
+                    )}
+                  </div>
+                  <p className="text-sm font-bold">KES {item.total.toFixed(2)}</p>
                 </div>
-                <p className="text-sm font-bold">KES {item.total.toFixed(2)}</p>
-              </div>
-            ))}
-          </div>
-          
-          <div className="space-y-1 mb-4">
-            <div className="flex justify-between text-sm">
-              <span>Subtotal:</span>
-              <span>KES {(receipt.total - receipt.vat_total).toFixed(2)}</span>
+              ))}
             </div>
-            {receipt.vat_total > 0 && (
+            
+            <div className="space-y-1 mb-4">
               <div className="flex justify-between text-sm">
-                <span>VAT:</span>
-                <span>KES {receipt.vat_total.toFixed(2)}</span>
+                <span>Subtotal:</span>
+                <span>KES {(receipt.total - receipt.vat_total).toFixed(2)}</span>
               </div>
-            )}
-            {receipt.discount_amount && receipt.discount_amount > 0 && (
-              <div className="flex justify-between text-sm text-red-600">
-                <span>Discount {receipt.discount_type === 'percentage' && receipt.discount_value ? `(${receipt.discount_value}%)` : ''}:</span>
-                <span>-KES {receipt.discount_amount.toFixed(2)}</span>
+              {receipt.vat_total > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span>VAT:</span>
+                  <span>KES {receipt.vat_total.toFixed(2)}</span>
+                </div>
+              )}
+              {receipt.discount_amount && receipt.discount_amount > 0 && (
+                <div className="flex justify-between text-sm text-red-600">
+                  <span>Discount {receipt.discount_type === 'percentage' && receipt.discount_value ? `(${receipt.discount_value}%)` : ''}:</span>
+                  <span>-KES {receipt.discount_amount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-lg font-bold border-t pt-1">
+                <span>Total:</span>
+                <span>KES {receipt.total.toFixed(2)}</span>
               </div>
-            )}
-            <div className="flex justify-between text-lg font-bold border-t pt-1">
-              <span>Total:</span>
-              <span>KES {receipt.total.toFixed(2)}</span>
             </div>
-          </div>
-          
-          <div className="bg-gray-50 p-3 rounded mb-4">
-            <p className="text-sm font-medium">Payment: {receipt.payment_method.toUpperCase()}</p>
-            {receipt.phone && <p className="text-sm">Phone: {receipt.phone}</p>}
-            {receipt.cash_amount && (
-              <>
-                <p className="text-sm">Received: KES {receipt.cash_amount.toFixed(2)}</p>
-                <p className="text-sm font-medium">Balance: KES {receipt.balance?.toFixed(2)}</p>
-              </>
-            )}
-          </div>
-          
-          <div className="text-center text-sm text-gray-600">
-            <p>Thank you for your purchase!</p>
-            <p>Please come again</p>
+            
+            <div className="bg-gray-50 p-3 rounded mb-4">
+              <p className="text-sm font-medium">Payment: {receipt.payment_method.toUpperCase()}</p>
+              {receipt.phone && <p className="text-sm">Phone: {receipt.phone}</p>}
+              {receipt.cash_amount && (
+                <>
+                  <p className="text-sm">Received: KES {receipt.cash_amount.toFixed(2)}</p>
+                  <p className="text-sm font-medium">Balance: KES {receipt.balance?.toFixed(2)}</p>
+                </>
+              )}
+            </div>
+            
+            <div className="text-center text-sm text-gray-600">
+              <p>Thank you for your purchase!</p>
+              <p>Please come again</p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Right Side Controls - Cash Input and Action Buttons */}
-      <div className="flex flex-col gap-4 w-full lg:w-80 lg:flex-shrink-0 lg:flex lg:flex-col lg:items-center lg:max-h-full lg:overflow-y-auto">
-        {/* Cash Amount Input Section */}
-        {receipt.payment_method === 'cash' && (
-          <div className="bg-[#2D3748] p-4 rounded-lg border border-[#4A5568] w-full max-w-sm flex-shrink-0">
-            <h4 className="text-sm font-medium text-gray-300 mb-3">Cash Payment Details</h4>
-            <div className="space-y-3">
-              <div className="flex flex-col gap-1">
-                <label htmlFor="cashAmount" className="text-xs text-gray-400">
-                  Amount Received (KES)
-                </label>
-                <input
-                  id="cashAmount"
-                  type="text"
-                  value={receipt.cash_amount || ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    // Allow empty string or valid numbers
-                    if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                      onCashAmountChange?.(value === '' ? 0 : Number(value));
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-[#4A5568] rounded bg-[#1A1F36] text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0ABAB5] text-sm"
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="flex items-center justify-between text-xs text-gray-300">
-                <span>Total Amount:</span>
-                <span>KES {receipt.total.toFixed(2)}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs font-medium">
-                <span className="text-gray-300">Balance:</span>
-                <span className={receipt.balance && receipt.balance >= 0 ? 'text-green-400' : 'text-red-400'}>
-                  KES {receipt.balance?.toFixed(2) || '0.00'}
-                </span>
-              </div>
-              {/* Auto-actions status indicator */}
-              {receiptSettings.autoPrint || receiptSettings.autoDownload ? (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">Auto-actions:</span>
-                  <span className={
-                    receipt.cash_amount && receipt.cash_amount > 0 && receipt.cash_amount >= receipt.total
-                      ? 'text-green-400' 
-                      : receipt.cash_amount && receipt.cash_amount > 0
-                        ? 'text-yellow-400'
-                        : 'text-gray-400'
-                  }>
-                    {receipt.cash_amount && receipt.cash_amount > 0 && receipt.cash_amount >= receipt.total
-                      ? 'Ready (will trigger in 1s)' 
-                      : receipt.cash_amount && receipt.cash_amount > 0
-                        ? 'Waiting for sufficient amount'
-                        : 'Waiting for cash amount'
-                    }
+      {/* Right Container - Cash Input and Action Buttons */}
+      <div className="flex items-center justify-center h-full overflow-hidden">
+        <div className="flex flex-col gap-4 w-full max-w-sm h-full overflow-y-auto">
+          {/* Cash Amount Input Section */}
+          {receipt.payment_method === 'cash' && (
+            <div className="bg-[#2D3748] p-4 rounded-xl border border-[#4A5568] w-full flex-shrink-0">
+              <h4 className="text-sm font-medium text-gray-300 mb-3">Cash Payment Details</h4>
+              <div className="space-y-3">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="cashAmount" className="text-xs text-gray-400">
+                    Amount Received (KES)
+                  </label>
+                  <input
+                    id="cashAmount"
+                    type="text"
+                    value={receipt.cash_amount || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow empty string or valid numbers
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        onCashAmountChange?.(value === '' ? 0 : Number(value));
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-[#4A5568] rounded-xl bg-[#1A1F36] text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0ABAB5] text-sm"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-300">
+                  <span>Total Amount:</span>
+                  <span>KES {receipt.total.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs font-medium">
+                  <span className="text-gray-300">Balance:</span>
+                  <span className={receipt.balance && receipt.balance >= 0 ? 'text-green-400' : 'text-red-400'}>
+                    KES {receipt.balance?.toFixed(2) || '0.00'}
                   </span>
                 </div>
-              ) : null}
+                {/* Auto-actions status indicator */}
+                {receiptSettings.autoPrint || receiptSettings.autoDownload ? (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Auto-actions:</span>
+                    <span className={
+                      receipt.cash_amount && receipt.cash_amount > 0 && receipt.cash_amount >= receipt.total
+                        ? 'text-green-400' 
+                        : receipt.cash_amount && receipt.cash_amount > 0
+                          ? 'text-yellow-400'
+                          : 'text-gray-400'
+                    }>
+                      {receipt.cash_amount && receipt.cash_amount > 0 && receipt.cash_amount >= receipt.total
+                        ? 'Ready (will trigger in 1s)' 
+                        : receipt.cash_amount && receipt.cash_amount > 0
+                          ? 'Waiting for sufficient amount'
+                          : 'Waiting for cash amount'
+                      }
+                    </span>
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Action Buttons */}
-        <div className="flex flex-col gap-2 w-full max-w-sm flex-shrink-0">
-          <Button 
-            variant="outline" 
-            onClick={generatePDF}
-            className="border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white px-6 py-3 rounded-xl"
-          >
-            <FileText className="w-4 h-4 mr-2" />
-            Download PDF
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={handlePrint}
-            className="border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white px-6 py-3 rounded-xl"
-          >
-            <Printer className="w-4 h-4 mr-2" />
-            Print Receipt
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={handleDownload}
-            className="border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white px-6 py-3 rounded-xl"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download TXT
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={onComplete}
-            className="border-gray-500 text-gray-500 hover:bg-gray-500 hover:text-white px-6 py-3 rounded-xl"
-          >
-            Close
-          </Button>
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-2 w-full flex-shrink-0">
+            <Button 
+              variant="outline" 
+              onClick={generatePDF}
+              className="border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white px-6 py-3 rounded-xl"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Download PDF
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={handlePrint}
+              className="border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white px-6 py-3 rounded-xl"
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Print Receipt
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={handleDownload}
+              className="border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white px-6 py-3 rounded-xl"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download TXT
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={onComplete}
+              className="border-gray-500 text-gray-500 hover:bg-gray-500 hover:text-white px-6 py-3 rounded-xl"
+            >
+              Close
+            </Button>
+          </div>
         </div>
       </div>
     </div>

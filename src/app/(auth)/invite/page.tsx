@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import Link from 'next/link';
 
 interface Invitation {
@@ -23,7 +23,7 @@ export default function InvitePage() {
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signUp } = useAuth();
+  const { signUp } = useSimplifiedAuth();
 
   useEffect(() => {
     const token = searchParams.get('token');

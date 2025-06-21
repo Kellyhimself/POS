@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +28,7 @@ interface ImportProgress {
 }
 
 export default function BulkOperationsPage() {
-  const { storeId } = useAuth();
+  const { storeId } = useSimplifiedAuth();
   const { getProducts, currentMode } = useUnifiedService();
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);

@@ -193,19 +193,19 @@ export default function AddStockDialog({
         {children}
       </DialogTrigger>
       <DialogContent
-        className="w-full max-w-[95vw] sm:w-[480px] md:w-[700px] lg:w-[900px] xl:w-[1000px] p-0 bg-[#1A1F36] text-white border border-white/10 rounded-lg shadow-lg"
-        style={{ maxHeight: '90vh', minHeight: 'unset' }}
+        className="max-w-2xl lg:max-w-4xl max-h-[90vh] bg-[#1A1F36] text-white border-[#2D3748]"
         showCloseButton
       >
         {/* Green header for purchase/invoice style */}
-        <div className="flex items-center justify-between px-6 py-3 bg-green-600 rounded-t-lg">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between px-6 py-3 bg-green-600 rounded-t-lg">
           <DialogTitle className="text-lg font-bold text-green-100">Record Purchase</DialogTitle>
+          <p className="text-sm text-green-200 mt-1 lg:mt-0 lg:text-right">{product.name}</p>
         </div>
-        <div className="space-y-4 lg:space-y-0 lg:flex lg:flex-row lg:gap-8 px-4 py-4"
-          style={{ minHeight: 'unset', maxHeight: 'calc(90vh - 56px)', overflowY: 'auto' }}
+        <div className="flex flex-col lg:flex-row lg:gap-8 p-4"
+          style={{ maxHeight: 'calc(90vh - 70px)' }}
         >
           {/* Left Side: Stock Input and Error */}
-          <div className="flex-1 min-w-0 lg:border-r lg:border-white/10 lg:pr-6">
+          <div className="flex-1 min-w-0 lg:border-r lg:border-white/10 lg:pr-6 overflow-y-auto">
             <div className="text-sm text-gray-400 mb-2">
               Current stock: {product.quantity} units
             </div>
@@ -216,11 +216,10 @@ export default function AddStockDialog({
                 </label>
                 <Input
                   id="numberOfPacks"
-                  type="number"
-                  min="1"
+                  type="text"
                   value={numberOfPacks}
                   onChange={(e) => setNumberOfPacks(e.target.value)}
-                  placeholder="Enter number of packs"
+                  placeholder="e.g., 5"
                   className="w-full bg-[#2D3748] border-white/10 text-white placeholder:text-gray-400"
                   disabled={isLoading}
                 />
@@ -237,12 +236,10 @@ export default function AddStockDialog({
                   <label htmlFor="costPrice" className="text-sm font-medium text-white">Cost Price *</label>
                   <Input
                     id="costPrice"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="text"
                     value={costPrice}
                     onChange={e => setCostPrice(Number(e.target.value))}
-                    placeholder="Enter cost price"
+                    placeholder="e.g., 150.00"
                     className="w-full bg-[#2D3748] border-white/10 text-white placeholder:text-gray-400"
                     disabled={isLoading}
                     required
@@ -252,12 +249,10 @@ export default function AddStockDialog({
                   <label htmlFor="retailPrice" className="text-sm font-medium text-white">Retail Price (optional)</label>
                   <Input
                     id="retailPrice"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="text"
                     value={retailPrice}
                     onChange={e => setRetailPrice(Number(e.target.value))}
-                    placeholder="Enter retail price"
+                    placeholder="e.g., 200.00"
                     className="w-full bg-[#2D3748] border-white/10 text-white placeholder:text-gray-400"
                     disabled={isLoading}
                   />
@@ -266,12 +261,10 @@ export default function AddStockDialog({
                   <label htmlFor="wholesalePrice" className="text-sm font-medium text-white">Wholesale Price (optional)</label>
                   <Input
                     id="wholesalePrice"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="text"
                     value={wholesalePrice}
                     onChange={e => setWholesalePrice(Number(e.target.value))}
-                    placeholder="Enter wholesale price"
+                    placeholder="e.g., 175.00"
                     className="w-full bg-[#2D3748] border-white/10 text-white placeholder:text-gray-400"
                     disabled={isLoading}
                   />
@@ -308,89 +301,92 @@ export default function AddStockDialog({
             </form>
           </div>
           {/* Right Side: Purchase Details */}
-          <div className="flex-1 min-w-0 mt-6 lg:mt-0 lg:pl-6">
-            <div className="p-3 bg-[#232B45]/60 rounded-lg border border-green-600/20">
-              <div className="font-semibold text-xs text-green-600 mb-2">Purchase Details (Optional)</div>
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <label htmlFor="invoice_number" className="text-xs font-medium text-gray-300">Invoice Number *</label>
-                  <Input
-                    id="invoice_number"
-                    value={purchaseDetails.invoice_number}
-                    onChange={e => setPurchaseDetails(prev => ({ ...prev, invoice_number: e.target.value }))}
-                    className="h-7 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="supplier_vat_no" className="text-xs font-medium text-gray-300">Supplier VAT No. *</label>
-                  <Input
-                    id="supplier_vat_no"
-                    value={purchaseDetails.supplier_vat_no}
-                    onChange={e => setPurchaseDetails(prev => ({ ...prev, supplier_vat_no: e.target.value }))}
-                    className="h-7 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="supplier_name" className="text-xs font-medium text-gray-300">Supplier Name *</label>
-                  <Input
-                    id="supplier_name"
-                    value={purchaseDetails.supplier_name}
-                    onChange={e => setPurchaseDetails(prev => ({ ...prev, supplier_name: e.target.value }))}
-                    className="h-7 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="is_vat_included" className="text-xs font-medium text-gray-300">VAT Included in cost price? *</label>
-                  <select
-                    id="is_vat_included"
-                    value={purchaseDetails.is_vat_included ? 'yes' : 'no'}
-                    onChange={e => {
-                      const isVat = e.target.value === 'yes';
-                      const totalQuantity = Number(numberOfPacks) * product.units_per_pack;
-                      const totalAmount = costPrice * totalQuantity;
-                      
-                      const calculatedVatAmount = calculateVatAmount(totalAmount, isVat);
-                      
-                      setPurchaseDetails(prev => ({
-                        ...prev,
-                        is_vat_included: isVat,
-                        input_vat_amount: calculatedVatAmount
-                      }));
-                    }}
-                    className="w-full h-7 text-xs rounded-md border border-[#3A3A3A] bg-[#2D3748] text-gray-200 px-2 focus:ring-green-600 focus:border-green-600"
-                  >
-                    <option value="no">No</option>
-                    <option value="yes">Yes</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="input_vat_amount" className="text-xs font-medium text-gray-300">Input VAT Amount (KES) *</label>
-                  <Input
-                    id="input_vat_amount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={purchaseDetails.input_vat_amount.toFixed(2)}
-                    onChange={e => {
-                      const value = parseFloat(e.target.value) || 0;
-                      setPurchaseDetails(prev => ({ 
-                        ...prev, 
-                        input_vat_amount: roundToTwoDecimals(value)
-                      }));
-                    }}
-                    className="h-7 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
-                    {purchaseDetails.is_vat_included 
-                      ? `VAT included in total amount of KES ${(costPrice * Number(numberOfPacks) * product.units_per_pack).toFixed(2)}`
-                      : `VAT calculated on base amount of KES ${(costPrice * Number(numberOfPacks) * product.units_per_pack).toFixed(2)}`
-                    }
-                  </p>
+          <div className="flex-1 min-w-0 mt-6 lg:mt-0 lg:pl-6 flex flex-col"
+            style={{ maxHeight: 'calc(90vh - 70px)' }}
+          >
+            <div className="flex-1 overflow-y-auto mb-2">
+              <div className="p-2 bg-[#232B45]/60 rounded-lg border border-green-600/20">
+                <div className="font-semibold text-xs text-green-600 mb-1">Purchase Details (Optional)</div>
+                <div className="grid grid-cols-1 gap-2">
+                  <div>
+                    <label htmlFor="invoice_number" className="text-xs font-medium text-gray-300">Invoice Number *</label>
+                    <Input
+                      id="invoice_number"
+                      value={purchaseDetails.invoice_number}
+                      onChange={e => setPurchaseDetails(prev => ({ ...prev, invoice_number: e.target.value }))}
+                      className="h-6 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="supplier_vat_no" className="text-xs font-medium text-gray-300">Supplier VAT No. *</label>
+                    <Input
+                      id="supplier_vat_no"
+                      value={purchaseDetails.supplier_vat_no}
+                      onChange={e => setPurchaseDetails(prev => ({ ...prev, supplier_vat_no: e.target.value }))}
+                      className="h-6 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="supplier_name" className="text-xs font-medium text-gray-300">Supplier Name *</label>
+                    <Input
+                      id="supplier_name"
+                      value={purchaseDetails.supplier_name}
+                      onChange={e => setPurchaseDetails(prev => ({ ...prev, supplier_name: e.target.value }))}
+                      className="h-6 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="is_vat_included" className="text-xs font-medium text-gray-300">VAT Included in cost price? *</label>
+                    <select
+                      id="is_vat_included"
+                      value={purchaseDetails.is_vat_included ? 'yes' : 'no'}
+                      onChange={e => {
+                        const isVat = e.target.value === 'yes';
+                        const totalQuantity = Number(numberOfPacks) * product.units_per_pack;
+                        const totalAmount = costPrice * totalQuantity;
+                        
+                        const calculatedVatAmount = calculateVatAmount(totalAmount, isVat);
+                        
+                        setPurchaseDetails(prev => ({
+                          ...prev,
+                          is_vat_included: isVat,
+                          input_vat_amount: calculatedVatAmount
+                        }));
+                      }}
+                      className="w-full h-6 text-xs rounded-md border border-[#3A3A3A] bg-[#2D3748] text-gray-200 px-2 focus:ring-green-600 focus:border-green-600"
+                    >
+                      <option value="no">No</option>
+                      <option value="yes">Yes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="input_vat_amount" className="text-xs font-medium text-gray-300">Input VAT Amount (KES) *</label>
+                    <Input
+                      id="input_vat_amount"
+                      type="text"
+                      value={purchaseDetails.input_vat_amount.toFixed(2)}
+                      onChange={e => {
+                        const value = parseFloat(e.target.value) || 0;
+                        setPurchaseDetails(prev => ({ 
+                          ...prev, 
+                          input_vat_amount: roundToTwoDecimals(value)
+                        }));
+                      }}
+                      placeholder="e.g., 24.00"
+                      className="h-6 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-green-600 focus:border-green-600"
+                    />
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {purchaseDetails.is_vat_included 
+                        ? `VAT included in total amount of KES ${(costPrice * Number(numberOfPacks) * product.units_per_pack).toFixed(2)}`
+                        : `VAT calculated on base amount of KES ${(costPrice * Number(numberOfPacks) * product.units_per_pack).toFixed(2)}`
+                      }
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
             {/* On large screens, show submit/cancel buttons here */}
-            <div className="flex justify-end gap-2 mt-4 hidden lg:flex">
+            <div className="flex justify-end gap-2 hidden lg:flex flex-shrink-0">
               <Button
                 type="button"
                 variant="outline"

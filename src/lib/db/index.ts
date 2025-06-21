@@ -1123,6 +1123,54 @@ export async function getCachedAppSettings(): Promise<OfflineAppSettings | undef
   return await db.app_settings.get('global');
 }
 
+// Store management functions for offline mode
+export async function saveOfflineStore(store: {
+  id: string;
+  name: string;
+  address?: string;
+  kra_pin?: string;
+  vat_number?: string;
+  etims_username?: string;
+  etims_password?: string;
+  kra_token?: string;
+  mpesa_details?: string;
+}) {
+  console.log('💾 Saving store to offline database:', { id: store.id, name: store.name });
+  
+  const offlineStore: Database['public']['Tables']['stores']['Row'] = {
+    id: store.id,
+    name: store.name,
+    address: store.address || null,
+    kra_pin: store.kra_pin || null,
+    vat_number: store.vat_number || null,
+    etims_username: store.etims_username || null,
+    etims_password: store.etims_password || null,
+    kra_token: store.kra_token || null,
+    mpesa_details: store.mpesa_details || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  await db.stores.put(offlineStore);
+  console.log('✅ Store saved to offline database:', { id: store.id, name: store.name });
+  return offlineStore;
+}
+
+export async function getOfflineStore(storeId: string): Promise<Database['public']['Tables']['stores']['Row'] | undefined> {
+  try {
+    const store = await db.stores.get(storeId);
+    if (store) {
+      console.log('📋 Retrieved store from offline database:', { id: store.id, name: store.name });
+    } else {
+      console.log('⚠️ Store not found in offline database:', storeId);
+    }
+    return store;
+  } catch (error) {
+    console.error('❌ Error retrieving store from offline database:', error);
+    return undefined;
+  }
+}
+
 /**
  * Update a product's price fields (cost_price, retail_price, wholesale_price) in the local DB.
  * Marks the product as synced: false for offline-first sync.

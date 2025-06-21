@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -74,7 +74,7 @@ const DateRangePicker = ({ startDate, endDate, onStartDateChange, onEndDateChang
 };
 
 const PurchaseHistoryPage: React.FC = () => {
-  const { storeId, loading } = useAuth();
+  const { storeId, loading } = useSimplifiedAuth();
   const { currentMode, getPurchases, getProducts } = useUnifiedService();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');

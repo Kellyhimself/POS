@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface AppState {
   user: unknown | null;
   storeId: string | null;
   storeName: string | null;
-  isOnline: boolean;
+  mode: 'online' | 'offline';
 }
 
 export default function DashboardLayout({
@@ -16,12 +16,12 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, storeId, storeName, loading, isOnline } = useAuth();
+  const { user, storeId, storeName, loading, mode } = useSimplifiedAuth();
   const [appState, setAppState] = useState<AppState>({
     user: null,
     storeId: null,
     storeName: null,
-    isOnline: navigator.onLine
+    mode: 'online'
   });
 
   // Update app state when auth state changes
@@ -32,19 +32,19 @@ export default function DashboardLayout({
         user,
         storeId,
         storeName,
-        isOnline
+        mode
       }));
     }
-  }, [user, storeId, storeName, isOnline, loading]);
+  }, [user, storeId, storeName, mode, loading]);
 
   // Handle network status changes
   useEffect(() => {
     const handleOnline = () => {
-      setAppState(prev => ({ ...prev, isOnline: true }));
+      setAppState(prev => ({ ...prev, mode: 'online' }));
     };
 
     const handleOffline = () => {
-      setAppState(prev => ({ ...prev, isOnline: false }));
+      setAppState(prev => ({ ...prev, mode: 'offline' }));
     };
 
     window.addEventListener('online', handleOnline);
@@ -63,10 +63,10 @@ export default function DashboardLayout({
 
     console.log('=== DashboardLayout State Update ===');
     console.log('Loading:', loading);
-    console.log('Online:', appState.isOnline);
+    console.log('Mode:', appState.mode);
     console.log('Network Status:', navigator.onLine);
     console.log('App State:', appState);
-    console.log('✅ App state valid:', { hasUser, hasStore, isOnline: appState.isOnline });
+    console.log('✅ App state valid:', { hasUser, hasStore, mode: appState.mode });
 
     return isStateValid;
   };

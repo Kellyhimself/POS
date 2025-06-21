@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -143,7 +143,7 @@ function EditableQuantityCell({
 }
 
 export default function InventoryPage() {
-  const { storeId, loading } = useAuth();
+  const { storeId, loading } = useSimplifiedAuth();
   const { currentMode, isOnlineMode, getProducts, createPurchase, updateProduct } = useUnifiedService();
   const [search, setSearch] = useState('');
   const queryClient = useQueryClient();

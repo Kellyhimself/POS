@@ -1,4 +1,4 @@
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { UnauthorizedAccess } from './UnauthorizedAccess';
 import { ComponentType } from 'react';
 
@@ -8,7 +8,7 @@ export function withRoleAccess<P extends object>(
   redirectTo: string = '/pos'
 ) {
   return function WithRoleAccess(props: P) {
-    const { user } = useAuth();
+    const { user } = useSimplifiedAuth();
     const userRole = user?.user_metadata?.role;
 
     // If no roles are required, allow access

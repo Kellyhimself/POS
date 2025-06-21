@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Menu, LogOut, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useRouter } from 'next/navigation';
 
 interface NavItem {
@@ -61,7 +61,7 @@ const Sidebar = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, signOut } = useSimplifiedAuth();
   const router = useRouter();
 
   // Check if user has access to a specific route
@@ -97,13 +97,13 @@ const Sidebar = () => {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Header with toggle button only */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-white">
+      <div className="px-4 py-3 border-b border-white/10 bg-[#1A1F36]">
         <div className="flex items-center justify-end">
           {!isMobile && (
             <Button
               variant="ghost"
               size="icon"
-              className="text-gray-600 hover:bg-gray-100"
+              className="text-white hover:bg-white/10"
               onClick={() => setIsExpanded(!isExpanded)}
             >
               {isExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}

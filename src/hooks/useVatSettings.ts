@@ -1,10 +1,10 @@
 import { useSettings } from '@/components/providers/SettingsProvider';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useState, useEffect } from 'react';
 
 export function useVatSettings() {
   const { settings } = useSettings();
-  const { user } = useAuth();
+  const { user } = useSimplifiedAuth();
   const [isVatEnabled, setIsVatEnabled] = useState(false);
 
   // Initialize isVatEnabled based on settings
@@ -116,10 +116,10 @@ export function useVatSettings() {
 
   // Check if user can toggle VAT
   const canToggleVat = () => {
-    const canToggle = settings?.enable_vat_toggle_on_pos && user?.role === 'admin';
+    const canToggle = settings?.enable_vat_toggle_on_pos && user?.user_metadata?.role === 'admin';
     console.log('🔐 Can toggle VAT:', canToggle, {
       enableVatToggle: settings?.enable_vat_toggle_on_pos,
-      userRole: user?.role
+      userRole: user?.user_metadata?.role
     });
     return canToggle;
   };

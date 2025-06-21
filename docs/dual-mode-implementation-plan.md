@@ -3,6 +3,259 @@
 ## Overview
 Implement both offline-first and online-only modes in the same project using feature flags and mode switching. This allows users to choose their preferred mode while maintaining a single codebase.
 
+## Simplified Authentication Strategy (NEW)
+
+### Problem with Current Approach
+The current authentication system has conflicts between online and offline states:
+- Offline tokens with `signedOut` flags create confusion
+- Session persistence issues when switching between modes
+- Complex credential validation logic
+- Password prompts for offline sign-out that don't actually sign out
+
+### Simplified Solution: Unified Session Management
+
+```typescript
+// src/lib/auth/UnifiedAuthManager.ts
+export class UnifiedAuthManager {
+  private currentSession: UnifiedSession | null = null;
+  private mode: 'online' | 'offline' = 'online';
+  
+  interface UnifiedSession {
+    id: string;
+    userId: string;
+    storeId: string;
+    email: string;
+    userMetadata: UserMetadata;
+    mode: 'online' | 'offline';
+    expiresAt: number;
+    accessToken?: string; // Only for online sessions
+  }
+  
+  // Single sign-in method that works for both modes
+  async signIn(email: string, password: string): Promise<UnifiedSession> {
+    if (this.mode === 'online') {
+      return await this.onlineSignIn(email, password);
+    } else {
+      return await this.offlineSignIn(email, password);
+    }
+  }
+  
+  // Single sign-out method that works for both modes
+  async signOut(): Promise<void> {
+    if (this.currentSession?.mode === 'online') {
+      await this.onlineSignOut();
+    } else {
+      await this.offlineSignOut();
+    }
+    
+    // Clear session regardless of mode
+    this.currentSession = null;
+    this.clearStoredSession();
+  }
+  
+  private async onlineSignIn(email: string, password: string): Promise<UnifiedSession> {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    
+    const session: UnifiedSession = {
+      id: data.session!.access_token,
+      userId: data.user!.id,
+      storeId: data.user!.user_metadata.store_id,
+      email: data.user!.email!,
+      userMetadata: data.user!.user_metadata,
+      mode: 'online',
+      expiresAt: data.session!.expires_at!,
+      accessToken: data.session!.access_token
+    };
+    
+    // Store session for offline fallback
+    this.storeSession(session);
+    return session;
+  }
+  
+  private async offlineSignIn(email: string, password: string): Promise<UnifiedSession> {
+    const storedSession = this.getStoredSession();
+    
+    if (!storedSession) {
+      throw new Error('No offline session available. Please sign in while online first.');
+    }
+    
+    // Validate credentials against stored session
+    if (storedSession.email !== email || !this.validateOfflinePassword(password)) {
+      throw new Error('Invalid credentials for offline mode.');
+    }
+    
+    return storedSession;
+  }
+  
+  private async onlineSignOut(): Promise<void> {
+    await supabase.auth.signOut();
+    // Clear stored session when signing out online
+    this.clearStoredSession();
+  }
+  
+  private async offlineSignOut(): Promise<void> {
+    // Simply clear the stored session - no complex token manipulation
+    this.clearStoredSession();
+  }
+  
+  // Session storage methods
+  private storeSession(session: UnifiedSession): void {
+    localStorage.setItem('unified_session', JSON.stringify(session));
+  }
+  
+  private getStoredSession(): UnifiedSession | null {
+    const stored = localStorage.getItem('unified_session');
+    if (!stored) return null;
+    
+    const session = JSON.parse(stored);
+    if (session.expiresAt < Date.now() / 1000) {
+      this.clearStoredSession();
+      return null;
+    }
+    
+    return session;
+  }
+  
+  private clearStoredSession(): void {
+    localStorage.removeItem('unified_session');
+  }
+  
+  // Mode switching
+  setMode(mode: 'online' | 'offline'): void {
+    this.mode = mode;
+    
+    // When switching to offline, try to restore session
+    if (mode === 'offline') {
+      const storedSession = this.getStoredSession();
+      if (storedSession) {
+        this.currentSession = { ...storedSession, mode: 'offline' };
+      }
+    }
+  }
+}
+```
+
+### Simplified AuthProvider
+
+```typescript
+// src/components/providers/SimplifiedAuthProvider.tsx
+export function SimplifiedAuthProvider({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<UnifiedSession | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<'online' | 'offline'>('online');
+  
+  const authManager = useMemo(() => new UnifiedAuthManager(), []);
+  
+  // Initialize auth state
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        // Check network status
+        const isOnline = navigator.onLine;
+        setMode(isOnline ? 'online' : 'offline');
+        authManager.setMode(isOnline ? 'online' : 'offline');
+        
+        // Try to restore session
+        const storedSession = authManager.getStoredSession();
+        if (storedSession) {
+          setSession(storedSession);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    initializeAuth();
+    
+    // Listen for network changes
+    const handleOnline = () => {
+      setMode('online');
+      authManager.setMode('online');
+    };
+    
+    const handleOffline = () => {
+      setMode('offline');
+      authManager.setMode('offline');
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [authManager]);
+  
+  const signIn = async (email: string, password: string) => {
+    try {
+      const session = await authManager.signIn(email, password);
+      setSession(session);
+      return { data: { session }, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  };
+  
+  const signOut = async () => {
+    try {
+      await authManager.signOut();
+      setSession(null);
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
+  };
+  
+  return (
+    <AuthContext.Provider value={{
+      session,
+      loading,
+      mode,
+      signIn,
+      signOut,
+      user: session ? {
+        id: session.userId,
+        email: session.email,
+        user_metadata: session.userMetadata
+      } : null
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+```
+
+### Benefits of Simplified Approach
+
+1. **No Complex Token Management**: 
+   - No offline tokens with signedOut flags
+   - No password prompts for offline sign-out
+   - Simple localStorage-based session storage
+
+2. **Clear Session State**:
+   - Single source of truth for authentication
+   - No conflicts between online and offline states
+   - Predictable sign-out behavior
+
+3. **Simpler User Experience**:
+   - Sign-out works the same in both modes
+   - No confusing password prompts
+   - Clear indication of current mode
+
+4. **Easier Maintenance**:
+   - Less complex code
+   - Fewer edge cases
+   - Easier to debug and test
+
+### Migration Strategy
+
+1. **Phase 1**: Implement UnifiedAuthManager alongside existing system
+2. **Phase 2**: Create SimplifiedAuthProvider
+3. **Phase 3**: Migrate components to use simplified auth
+4. **Phase 4**: Remove complex offline token system
+
 ## Architecture Strategy
 
 ### 1. Feature Flag System

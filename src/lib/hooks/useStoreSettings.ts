@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase-clients/pages';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 
 // Create a single instance of the client
 const supabase = createClient();
@@ -24,7 +24,7 @@ export interface StoreSettings {
 }
 
 export function useStoreSettings() {
-  const { user } = useAuth();
+  const { user } = useSimplifiedAuth();
   const queryClient = useQueryClient();
   const storeId = user?.user_metadata?.store_id;
 

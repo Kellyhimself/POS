@@ -1,4 +1,4 @@
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -8,7 +8,7 @@ interface UnauthorizedAccessProps {
 }
 
 export function UnauthorizedAccess({ requiredRoles, redirectTo = '/pos' }: UnauthorizedAccessProps) {
-  const { user } = useAuth();
+  const { user } = useSimplifiedAuth();
   const router = useRouter();
 
   useEffect(() => {

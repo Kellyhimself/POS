@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import Link from 'next/link';
 
 export default function SignupPage() {
@@ -16,7 +16,7 @@ export default function SignupPage() {
   const [etimsPassword, setEtimsPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { signUp } = useAuth();
+  const { signUp } = useSimplifiedAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

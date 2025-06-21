@@ -2,13 +2,12 @@
 
 import React, { useState } from 'react';
 import {useMutation } from '@tanstack/react-query';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { ProductGrid } from '@/components/products/ProductGrid';
@@ -84,7 +83,7 @@ interface MpesaResponse {
 }
 
 const POSPage = () => {
-  const { user, storeId, isOnline } = useAuth();
+  const { user, storeId, mode } = useSimplifiedAuth();
   const { currentMode, createSale } = useUnifiedService();
   const [phone, setPhone] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -100,7 +99,7 @@ const POSPage = () => {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const queryClient = useQueryClient();
 
-  console.log('POS Page - Auth State:', { user, storeId, isOnline, currentMode });
+  console.log('POS Page - Auth State:', { user, storeId, mode, currentMode });
 
   // Add to cart mutation
   const addToCartMutation = useMutation({
@@ -284,7 +283,7 @@ const POSPage = () => {
       // Process payment based on method
       if (paymentMethod === 'mobile money') {
         if (!phone) throw new Error('Phone number is required for mobile money payment');
-        if (isOnline) {
+        if (mode) {
           const mpesaResponse = await fetch('/api/mpesa', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -390,8 +389,8 @@ const POSPage = () => {
         receipt: {
           store: {
             id: storeId,
-            name: user?.user_metadata?.store_name || 'Store',
-            address: user?.user_metadata?.store_address || 'Location'
+            name: (user?.user_metadata?.store_name as string) || 'Store',
+            address: (user?.user_metadata?.store_address as string) || 'Location'
           },
           sale: {
             id: saleResult.id,
@@ -496,9 +495,7 @@ const POSPage = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <DialogTitle className="text-white">Transaction Complete</DialogTitle>
-                  <DialogDescription className="text-gray-300">
-                    Your sale has been completed successfully. Receipt will be automatically printed.
-                  </DialogDescription>
+
                 </div>
                 <Button
                   variant="ghost"

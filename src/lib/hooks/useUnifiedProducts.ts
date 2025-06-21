@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { getModeManager } from '@/lib/mode/ModeManager';
 import { getUnifiedService } from '@/lib/services/UnifiedService';
 import { Database } from '@/types/supabase';
@@ -17,7 +17,7 @@ export interface ProductSyncStatus {
 export function useUnifiedProducts(storeId: string) {
   console.log('🔄 useUnifiedProducts: Hook called with storeId:', storeId);
   
-  const { user } = useAuth();
+  const { user } = useSimplifiedAuth();
   console.log('🔄 useUnifiedProducts: User from auth:', user ? 'Authenticated' : 'Not authenticated');
   
   const [products, setProducts] = useState<Database['public']['Tables']['products']['Row'][]>([]);

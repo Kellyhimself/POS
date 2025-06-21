@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 
 export function PendingSubmissions() {
-  const { user } = useAuth();
+  const { user } = useSimplifiedAuth();
   const { currentMode, getPendingETIMSSubmissions, syncPendingETIMSSubmissions } = useUnifiedService();
   const [pendingSubmissions, setPendingSubmissions] = useState<Record<string, unknown>[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);

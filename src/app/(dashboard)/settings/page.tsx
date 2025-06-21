@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { toast } from 'sonner';
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -16,12 +16,12 @@ import { ReceiptSettings } from '@/components/settings/ReceiptSettings';
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'general' | 'vat' | 'mode' | 'receipt' | 'sync' | 'advanced'>('general');
   const { settings, isLoading, isSyncing, updateSettings, syncSettings } = useSettings();
-  const { isOnline } = useAuth();
+  const { mode } = useSimplifiedAuth();
 
   const tabList = [
     { key: 'general', label: 'General', icon: SettingsIcon },
     { key: 'vat', label: 'VAT Settings', icon: Calculator },
-    { key: 'mode', label: 'Operation Mode', icon: isOnline ? Wifi : WifiOff },
+    { key: 'mode', label: 'Operation Mode', icon: mode === 'online' ? Wifi : WifiOff },
     { key: 'receipt', label: 'Receipt Settings', icon: Receipt },
     { key: 'sync', label: 'Sync Settings', icon: RefreshCw },
     { key: 'advanced', label: 'Advanced', icon: Database },
@@ -273,8 +273,8 @@ export default function SettingsPage() {
                   <Label className="text-base font-medium">Debug Information</Label>
                   <div className="bg-muted p-4 rounded-lg text-sm">
                     <div className="space-y-1">
-                      <div>Current Mode: <span className="font-mono">{isOnline ? 'online' : 'offline'}</span></div>
-                      <div>Network Status: <span className="font-mono">{isOnline ? 'connected' : 'disconnected'}</span></div>
+                      <div>Current Mode: <span className="font-mono">{mode === 'online' ? 'online' : 'offline'}</span></div>
+                      <div>Network Status: <span className="font-mono">{mode === 'online' ? 'connected' : 'disconnected'}</span></div>
                       <div>Last Sync: <span className="font-mono">2 minutes ago</span></div>
                       <div>Pending Items: <span className="font-mono">0</span></div>
                     </div>
@@ -315,7 +315,7 @@ export default function SettingsPage() {
             Configure your application settings and preferences
           </p>
         </div>
-        {isOnline && (
+        {mode && (
           <Button
             onClick={() => syncSettings()}
             disabled={isLoading || isSyncing}

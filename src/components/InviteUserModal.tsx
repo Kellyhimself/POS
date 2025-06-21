@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { useAuth } from './providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 
 interface InviteUserModalProps {
   isOpen: boolean;
@@ -15,7 +15,7 @@ export default function InviteUserModal({ isOpen, onClose, storeId }: InviteUser
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const { user } = useAuth();
+  const { user } = useSimplifiedAuth();
 
   if (!isOpen) return null;
 

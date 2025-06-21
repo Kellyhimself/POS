@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from 'react';
-import { useAuth } from '../providers/AuthProvider';
-import { useUnifiedService } from '../providers/UnifiedServiceProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
+import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { useRouter } from 'next/navigation';
-import { OfflineSignOutPrompt } from '../auth/OfflineSignOutPrompt';
-import { ModeIndicator } from '../ui/ModeIndicator';
+import { ModeIndicator } from '@/components/ui/ModeIndicator';
 
 interface HeaderProps {
   isOnline: boolean;
@@ -15,8 +14,7 @@ interface HeaderProps {
 const Header = ({ isOnline, storeName }: HeaderProps) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
-  const [isSignOutPromptOpen, setIsSignOutPromptOpen] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, signOut, mode } = useSimplifiedAuth();
   const { clearOfflineData } = useUnifiedService();
   const router = useRouter();
 
@@ -26,18 +24,15 @@ const Header = ({ isOnline, storeName }: HeaderProps) => {
 
   const handleSignOut = async () => {
     setIsProfileOpen(false);
-    if (!isOnline) {
-      setIsSignOutPromptOpen(true);
-    } else {
+    console.log('🔐 Header: Starting sign out process');
+    console.log(`🌐 Header: Current mode - ${mode}`);
+    
+    try {
       await signOut();
-      router.push('/login');
+      console.log('✅ Header: Sign out successful');
+    } catch (error) {
+      console.error('❌ Header: Sign out error:', error);
     }
-  };
-
-  const handleSignOutConfirm = async (password: string) => {
-    setIsSignOutPromptOpen(false);
-    await signOut(password);
-    router.push('/login');
   };
 
   const handleClearOfflineData = async () => {
@@ -55,78 +50,81 @@ const Header = ({ isOnline, storeName }: HeaderProps) => {
 
   return (
     <>
-      <header className="sticky top-0 h-16 bg-white border-b border-gray-200 px-6 flex items-center justify-between z-40">
-        <div className="flex items-center">
-          <h2 className="text-lg font-medium text-gray-800">{storeName || 'Loading...'}</h2>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          {/* Mode Indicator */}
-          <ModeIndicator />
-          
-          {/* Notifications */}
-          <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-            <span className="text-gray-600">🔔</span>
-          </button>
-          
-          {/* Profile */}
-          <div className="relative">
-            <button
-              onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <div className="w-8 h-8 rounded-full bg-[#0ABAB5] flex items-center justify-center text-white font-medium">
-                {avatarLetter}
-              </div>
-            </button>
-            
-            {isProfileOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-2">
-                <a href="/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-50">
-                  Profile
-                </a>
-                <a href="/settings" className="block px-4 py-2 text-gray-700 hover:bg-gray-50">
-                  Settings
-                </a>
-                <hr className="my-2 border-gray-200" />
+      <header className="bg-gradient-to-r from-[#1A1F36] via-[#2D3748] to-white shadow-lg border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            {/* Left side - Store name and mode indicator */}
+            <div className="flex items-center space-x-4">
+              <h1 className="text-xl font-semibold text-white">
+                {storeName || 'Store Management'}
+              </h1>
+            </div>
+
+            {/* Right side - User profile */}
+            <div className="flex items-center space-x-4">
+              <ModeIndicator />
+              <div className="relative">
                 <button
-                  onClick={() => setIsConfirmingClear(true)}
-                  className="block w-full text-left px-4 py-2 text-yellow-600 hover:bg-gray-50"
+                  onClick={() => setIsProfileOpen(!isProfileOpen)}
+                  className="flex items-center space-x-2 text-sm text-gray-700 hover:text-gray-900 focus:outline-none"
                 >
-                  Clear Offline Data
+                  <div className="w-8 h-8 bg-[#0ABAB5] text-white rounded-full flex items-center justify-center text-sm font-medium">
+                    {avatarLetter}
+                  </div>
+                  <span>{firstName}</span>
                 </button>
-                <button
-                  onClick={handleSignOut}
-                  className="block w-full text-left px-4 py-2 text-red-600 hover:bg-gray-50"
-                >
-                  Sign out
-                </button>
+
+                {/* Profile dropdown */}
+                {isProfileOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200">
+                    <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100">
+                      <div className="font-medium">{user?.email}</div>
+                      <div className="text-gray-500">{user?.user_metadata?.role || 'User'}</div>
+                    </div>
+                    
+                    <button
+                      onClick={handleSignOut}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Sign out
+                    </button>
+                    
+                    {mode === 'offline' && (
+                      <button
+                        onClick={() => setIsConfirmingClear(true)}
+                        className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                      >
+                        Clear offline data
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Confirmation Dialog */}
+      {/* Clear offline data confirmation */}
       {isConfirmingClear && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-white p-6 rounded-lg max-w-md mx-4">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
               Clear Offline Data
             </h3>
-            <p className="text-gray-600 mb-6">
-              This will delete all offline data including pending sales, stock updates, and ETIMS submissions. This action cannot be undone.
+            <p className="text-sm text-gray-600 mb-6">
+              This will clear all offline data including products, transactions, and settings. This action cannot be undone.
             </p>
-            <div className="flex justify-end space-x-4">
+            <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setIsConfirmingClear(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
               >
                 Cancel
               </button>
               <button
                 onClick={handleClearOfflineData}
-                className="px-4 py-2 bg-yellow-600 text-white hover:bg-yellow-700 rounded-md"
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
               >
                 Clear Data
               </button>
@@ -134,13 +132,6 @@ const Header = ({ isOnline, storeName }: HeaderProps) => {
           </div>
         </div>
       )}
-
-      {/* Offline Sign Out Prompt */}
-      <OfflineSignOutPrompt
-        isOpen={isSignOutPromptOpen}
-        onClose={() => setIsSignOutPromptOpen(false)}
-        onConfirm={handleSignOutConfirm}
-      />
     </>
   );
 };

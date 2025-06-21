@@ -248,14 +248,15 @@ export class OfflineService {
 
   async getPendingSyncCount(): Promise<number> {
     try {
+      // Fix: Use proper boolean comparison instead of equals(false)
       const pendingProducts = await db.products
         .where('synced')
-        .equals(false)
+        .notEqual(true)
         .count();
 
       const pendingTransactions = await db.transactions
         .where('synced')
-        .equals(false)
+        .notEqual(true)
         .count();
 
       return pendingProducts + pendingTransactions;

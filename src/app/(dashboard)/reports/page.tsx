@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { format } from 'date-fns';
 import { saveAs } from 'file-saver';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { toast } from 'sonner';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -150,9 +150,9 @@ export default function ReportsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
-  const { user, session, storeId, storeName } = useAuth();
+  const { user, session, storeId, storeName } = useSimplifiedAuth();
+  const { mode } = useSimplifiedAuth();
   const { currentMode, generateReports, generateInventoryReport, generateInputVatReport, generalReport } = useUnifiedService();
-  const { isOnline } = useAuth();
   const [generalData, setGeneralData] = useState<ReportData | null>(null);
   const [pdfLibrariesLoaded, setPdfLibrariesLoaded] = useState(false);
   const [pdfLibraries, setPdfLibraries] = useState<{ jsPDF: any; autoTable: any } | null>(null);
@@ -438,7 +438,7 @@ export default function ReportsPage() {
     setIsPdfLoading(true);
     try {
       // Check if we're offline and provide a helpful message
-      if (!isOnline) {
+      if (mode !== 'online') {
         console.log('📄 PDF Export: Attempting to export in offline mode');
       }
 
@@ -460,7 +460,7 @@ export default function ReportsPage() {
           autoTable = autoTableModule.default;
         } catch (importError) {
           console.error('Error importing PDF libraries:', importError);
-          if (!isOnline) {
+          if (mode !== 'online') {
             toast.error('PDF export requires internet connection to load libraries. Please try again when online.');
           } else {
             toast.error('Failed to load PDF libraries. Please refresh the page and try again.');
@@ -992,9 +992,9 @@ export default function ReportsPage() {
               (activeTab === 'overview' && generalData)) && !isLoading && (
               <button
                 onClick={exportToPDF}
-                disabled={isPdfLoading || (!pdfLibrariesLoaded && !isOnline)}
-                className={`px-4 py-2 bg-red-500 text-white rounded ${(isPdfLoading || (!pdfLibrariesLoaded && !isOnline)) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={(!pdfLibrariesLoaded && !isOnline) ? 'PDF libraries not loaded. Please try again when online.' : ''}
+                disabled={isPdfLoading || (!pdfLibrariesLoaded && mode !== 'online')}
+                className={`px-4 py-2 bg-red-500 text-white rounded ${(isPdfLoading || (!pdfLibrariesLoaded && mode !== 'online')) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={(!pdfLibrariesLoaded && mode !== 'online') ? 'PDF libraries not loaded. Please try again when online.' : ''}
               >
                 {isPdfLoading ? 'Generating PDF...' : 'Export to PDF'}
               </button>

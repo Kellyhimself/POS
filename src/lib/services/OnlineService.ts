@@ -755,7 +755,7 @@ export class OnlineService {
         product_id: transaction.product_id,
         quantity: transaction.quantity,
         total: transaction.total,
-        vat_amount: transaction.vat_amount,
+        vat_amount: transaction.vat_amount * transaction.quantity, // Fix: Multiply by quantity to get total VAT
         payment_method: transaction.payment_method,
         timestamp: transaction.timestamp,
         sale_mode: 'retail' as const, // Default to retail for online mode

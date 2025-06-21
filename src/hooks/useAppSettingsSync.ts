@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { createClient } from '@/lib/supabase-clients/pages';
 import { cacheAppSettings, getCachedAppSettings } from '@/lib/db';
 
@@ -14,7 +14,7 @@ interface AppSettings {
 }
 
 export function useAppSettingsSync() {
-  const { isOnline: authIsOnline } = useAuth();
+  const { mode: authMode } = useSimplifiedAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -47,22 +47,16 @@ export function useAppSettingsSync() {
 
   // Log when auth online status changes
   useEffect(() => {
-    console.log('🔐 Auth online status:', authIsOnline ? 'Online' : 'Offline');
-  }, [authIsOnline]);
+    console.log('🔐 Auth online status:', authMode === 'online' ? 'Online' : 'Offline');
+  }, [authMode]);
 
   // Sync settings when coming online
   useEffect(() => {
-    const handleOnline = async () => {
-      if (isOnline) {
-        console.log('🟢 Network is online, syncing settings...');
-        await syncSettings();
-        setLastSynced(new Date());
-      }
-    };
-
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, [isOnline]);
+    if (isOnline && authMode === 'online') {
+      console.log('🔄 Syncing settings after coming online');
+      syncSettings();
+    }
+  }, [isOnline, authMode]);
 
   // Initial load of settings
   useEffect(() => {
@@ -73,7 +67,7 @@ export function useAppSettingsSync() {
     try {
       console.log('📥 Loading settings...');
       console.log('🌐 Network status:', isOnline ? 'Online' : 'Offline');
-      console.log('🔐 Auth status:', authIsOnline ? 'Online' : 'Offline');
+      console.log('🔐 Auth status:', authMode === 'online' ? 'Online' : 'Offline');
       
       // First try to get from IndexedDB
       const localSettings = await getCachedAppSettings();
@@ -171,14 +165,14 @@ export function useAppSettingsSync() {
   };
 
   const syncSettings = async () => {
-    if (!isOnline) {
-      console.log('📱 Skipping sync - offline mode');
-      return;
-    }
-
-    setIsSyncing(true);
+    if (isSyncing) return;
+    
     try {
-      console.log('🔄 Starting settings sync...');
+      setIsSyncing(true);
+      console.log('📥 Loading settings...');
+      console.log('🌐 Network status:', isOnline ? 'Online' : 'Offline');
+      console.log('🔐 Auth status:', authMode === 'online' ? 'Online' : 'Offline');
+      
       const localSettings = await getCachedAppSettings();
       console.log('💾 Current cached settings:', localSettings);
       

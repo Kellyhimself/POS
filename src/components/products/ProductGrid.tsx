@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useQuery } from '@tanstack/react-query';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { Database } from '@/types/supabase';
 
 type Product = Database['public']['Tables']['products']['Row'];
@@ -15,7 +15,7 @@ interface ProductGridProps {
 }
 
 export function ProductGrid({ onAddToCart, onProductsLoaded, shouldRefetch = false }: ProductGridProps) {
-  const { storeId } = useAuth();
+  const { storeId } = useSimplifiedAuth();
   const { getProducts, currentMode } = useUnifiedService();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');

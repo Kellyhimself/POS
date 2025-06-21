@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import SyncManager from '@/components/etims/SyncQRCode';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 
 const DashboardPage = () => {
-  const { storeId, loading, isOnline, user } = useAuth();
+  const { storeId, loading, mode, user } = useSimplifiedAuth();
   const { currentMode, getPendingSyncCount, getProducts, getTransactions } = useUnifiedService();
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<Event | null>(null);
@@ -199,7 +199,7 @@ const DashboardPage = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-500 dark:text-blue-400">
-                {isOnline ? 'Online' : 'Offline'}
+                {mode === 'online' ? 'Online' : 'Offline'}
               </div>
             </CardContent>
           </Card>

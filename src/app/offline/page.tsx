@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { Button } from '@/components/ui/button';
 import { WifiOff, RefreshCw } from 'lucide-react';
 
 export default function OfflinePage() {
   const router = useRouter();
-  const { isOnline } = useAuth();
+  const { mode } = useSimplifiedAuth();
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function OfflinePage() {
           <WifiOff className="h-12 w-12 text-red-500 mb-4" />
           <h1 className="text-2xl font-bold text-gray-800 mb-2">You're Offline</h1>
           <p className="text-gray-600 text-center mb-4">
-            {isOnline 
+            {mode 
               ? "The app is in offline mode. Some features may be limited."
               : "Please check your internet connection and try again."}
           </p>

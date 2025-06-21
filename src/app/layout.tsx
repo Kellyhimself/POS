@@ -3,10 +3,8 @@
 import './globals.css';
 import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
-import { AuthProvider } from '@/components/providers/AuthProvider';
 import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/components/providers/AuthProvider';
 import { SettingsProvider } from '@/components/providers/SettingsProvider';
 import { UnifiedServiceProvider } from '@/components/providers/UnifiedServiceProvider';
 import { getUnifiedService } from '@/lib/services/UnifiedService';
@@ -15,6 +13,7 @@ import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
+import { SimplifiedAuthProvider, useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 
 import * as React from 'react';
 
@@ -22,7 +21,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 function RootLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, storeName, loading, isOnline } = useAuth();
+  const { user, storeName, loading, mode } = useSimplifiedAuth();
 
   // Initialize unified service and mode manager
   React.useEffect(() => {
@@ -40,10 +39,10 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
     if (!loading && user?.user_metadata?.store_id) {
       console.log('🔍 Auth ready for unified service', {
         storeId: user.user_metadata.store_id,
-        isOnline: navigator.onLine,
+        isOnline: mode === 'online',
       });
     }
-  }, [loading, user]);
+  }, [loading, user, mode]);
 
   React.useEffect(() => {
     console.log('📋 App State:', {
@@ -51,9 +50,9 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
       path: pathname,
       storeId: user?.user_metadata?.store_id,
       loading,
-      isOnline: navigator.onLine,
+      isOnline: mode === 'online',
     });
-  }, [user, pathname, loading]);
+  }, [user, pathname, loading, mode]);
 
   React.useEffect(() => {
     const handleOnline = () => console.log('🌐 App is online');
@@ -91,7 +90,7 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
         {/* Main Content Area - Properly positioned to avoid sidebar overlap */}
         <div className="flex-1 flex flex-col min-w-0 ml-16">
           {/* Header - Sticky at top of main content area */}
-          <Header isOnline={isOnline} storeName={storeName || undefined} />
+          <Header isOnline={mode === 'online'} storeName={storeName || undefined} />
           
           {/* Main content - Scrollable area below header */}
           <main className={cn(
@@ -172,7 +171,7 @@ export default function RootLayout({
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#0ABAB5" />
       </head>
       <body className={inter.className}>
-        <AuthProvider>
+        <SimplifiedAuthProvider>
           <UnifiedServiceProvider>
             <SettingsProvider>
               <ReactQueryProvider>
@@ -181,7 +180,7 @@ export default function RootLayout({
               </ReactQueryProvider>
             </SettingsProvider>
           </UnifiedServiceProvider>
-        </AuthProvider>
+        </SimplifiedAuthProvider>
       </body>
     </html>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { getModeManager } from '@/lib/mode/ModeManager';
 import { getUnifiedService } from '@/lib/services/UnifiedService';
 import { useUnifiedProducts } from '@/lib/hooks/useUnifiedProducts';
@@ -11,7 +11,7 @@ import { ModeSettings } from '@/components/settings/ModeSettings';
 export default function TestDualModePage() {
   console.log('🔄 TestDualModePage: Component rendering');
   
-  const { user } = useAuth();
+  const { user } = useSimplifiedAuth();
   console.log('🔄 TestDualModePage: User from auth:', user ? 'Authenticated' : 'Not authenticated');
   
   const [currentMode, setCurrentMode] = useState<'offline' | 'online'>('online');

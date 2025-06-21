@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { useAuth } from '@/components/providers/AuthProvider';
+import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import Link from 'next/link';
 import { AuthError } from '@supabase/supabase-js';
 import { WifiOff } from 'lucide-react';
@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { signIn, isOnline } = useAuth();
+  const { signIn, mode } = useSimplifiedAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,8 +19,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      console.log('🔐 LoginPage: Starting login process');
+      console.log(`🌐 LoginPage: Current mode - ${mode}`);
+      
       const { data, error } = await signIn(email, password);
+      
       if (error) {
+        console.error('❌ LoginPage: Login error:', error);
         if (error.message.includes('offline')) {
           setError('Please login while online first to enable offline access.');
         } else {
@@ -31,9 +36,11 @@ export default function LoginPage() {
       
       if (!data?.session) {
         setError('Authentication failed. Please try again.');
+      } else {
+        console.log('✅ LoginPage: Login successful');
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('❌ LoginPage: Unexpected error:', error);
       if (error instanceof AuthError) {
         setError(error.message);
       } else {
@@ -45,45 +52,39 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F7F9FC]">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-sm">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="text-center text-3xl font-bold text-gray-900">Welcome back</h2>
-          <p className="mt-2 text-center text-sm text-gray-700">
-            Don&apos;t have an account?{' '}
-            <Link href="/signup" className="font-medium text-[#0ABAB5] hover:text-[#099C98]">
-              Sign up
-            </Link>
-          </p>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Sign in to your account
+          </h2>
+          {mode === 'offline' && (
+            <div className="mt-2 flex items-center justify-center text-sm text-yellow-600">
+              <WifiOff className="w-4 h-4 mr-1" />
+              Offline Mode
+            </div>
+          )}
         </div>
-
-        {!isOnline && (
-          <div className="flex items-center justify-center text-yellow-600 bg-yellow-50 p-3 rounded-md">
-            <WifiOff className="h-5 w-5 mr-2" />
-            <span className="text-sm">You&apos;re offline. Please enter your credentials to sign in.</span>
-          </div>
-        )}
-
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
+          <div className="rounded-md shadow-sm -space-y-px">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email-address" className="sr-only">
                 Email address
               </label>
               <input
-                id="email"
+                id="email-address"
                 name="email"
                 type="email"
                 autoComplete="email"
                 required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#0ABAB5] focus:border-[#0ABAB5]"
-                disabled={loading}
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="sr-only">
                 Password
               </label>
               <input
@@ -92,10 +93,10 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#0ABAB5] focus:border-[#0ABAB5]"
-                disabled={loading}
               />
             </div>
           </div>
@@ -104,17 +105,24 @@ export default function LoginPage() {
             <div className="text-red-600 text-sm text-center">{error}</div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-              loading
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-[#0ABAB5] hover:bg-[#099C98] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0ABAB5]'
-            }`}
-          >
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              {loading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </div>
+
+          <div className="text-center">
+            <Link
+              href="/signup"
+              className="font-medium text-indigo-600 hover:text-indigo-500"
+            >
+              Don't have an account? Sign up
+            </Link>
+          </div>
         </form>
       </div>
     </div>
