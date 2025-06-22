@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
-import { Plus } from 'lucide-react';
+import { Plus, Scan } from 'lucide-react';
+import { BarcodeProductCreator } from './BarcodeProductCreator';
 
 interface CreateProductPopoverProps {
   storeId: string;
@@ -22,6 +23,7 @@ interface CreateProductPopoverProps {
 interface CreateProductInput {
   name: string;
   sku: string;
+  barcode: string;
   category: string;
   unit_of_measure: string;
   units_per_pack: number;
@@ -81,12 +83,14 @@ const UNIT_OPTIONS = [
 export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showBarcodeCreator, setShowBarcodeCreator] = useState(false);
   const { createProduct } = useUnifiedService();
   const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState<CreateProductInput>({
     name: '',
     sku: '',
+    barcode: '',
     category: '',
     unit_of_measure: 'unit',
     units_per_pack: 1,
@@ -126,10 +130,14 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
 
     setIsSubmitting(true);
     try {
+      // Convert empty barcode string to null for database validation
+      const barcodeValue = formData.barcode.trim() || null;
+      
       // Convert to unified service format - PRODUCT MASTER DATA ONLY
       const productData = {
         name: formData.name,
         sku: formData.sku,
+        barcode: barcodeValue, // Use null instead of empty string
         category: formData.category,
         store_id: storeId,
         quantity: 0, // Start with 0 quantity - stock will be added separately
@@ -152,6 +160,7 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
       setFormData({
         name: '',
         sku: '',
+        barcode: '',
         category: '',
         unit_of_measure: 'unit',
         units_per_pack: 1,
@@ -182,6 +191,14 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
     }
   };
 
+  const handleProductCreated = (productData: { name: string; barcode: string; sku?: string; category?: string; retail_price?: number; wholesale_price?: number; cost_price?: number; unit_of_measure?: string; units_per_pack?: number; vat_status?: boolean }) => {
+    console.log('Product created via barcode scanner:', productData);
+    toast.success(`Product created: ${productData.name}`);
+    setShowBarcodeCreator(false);
+    setOpen(false);
+    queryClient.invalidateQueries({ queryKey: ['products', storeId] });
+  };
+
   // Single-step form rendering
   const renderForm = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -208,6 +225,29 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
             onChange={e => setFormData(prev => ({ ...prev, sku: e.target.value }))} 
             className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="barcode" className="text-[10px] sm:text-xs font-medium text-gray-300">Barcode (optional)</Label>
+          <div className="flex gap-2">
+            <Input 
+              id="barcode" 
+              value={formData.barcode} 
+              onChange={e => setFormData(prev => ({ ...prev, barcode: e.target.value }))} 
+              placeholder="EAN-13, UPC, Code 128, etc."
+              className="flex-1 h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBarcodeCreator(true)}
+              className="h-7 sm:h-8 px-2 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 hover:bg-[#0ABAB5] hover:text-white"
+              title="Scan barcode to auto-fill product info"
+            >
+              <Scan className="w-3 h-3" />
+            </Button>
+          </div>
         </div>
         
         <div className="space-y-2">
@@ -340,6 +380,32 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
         <Plus className="h-4 w-4" />
         Add Product
       </Button>
+      
+      {/* Barcode Product Creator Modal */}
+      {showBarcodeCreator && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900">Create Product with Barcode Scanner</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowBarcodeCreator(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ×
+                </Button>
+              </div>
+              <BarcodeProductCreator
+                storeId={storeId}
+                onProductCreated={handleProductCreated}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+      
       <Sheet open={open} onOpenChange={o => { setOpen(o); }}>
         <SheetContent side="right" className="w-full sm:w-[800px] sm:max-w-[800px] overflow-y-auto h-screen bg-[#1A1F36] border-l border-[#0ABAB5]/20">
           <SheetHeader className="space-y-2 px-3 sm:px-6">

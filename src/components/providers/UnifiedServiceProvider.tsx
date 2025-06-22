@@ -19,6 +19,13 @@ interface AppSettings {
   receipt_show_inline?: boolean;
   receipt_auto_close?: boolean;
   receipt_close_delay?: number;
+  // Cost protection settings
+  cost_protection_enabled?: boolean;
+  cost_protection_admin_approval?: boolean;
+  cost_protection_allow_below_cost?: boolean;
+  cost_protection_min_margin?: number;
+  cost_protection_show_warnings?: boolean;
+  cost_protection_auto_calculate?: boolean;
 }
 
 interface UnifiedServiceContextType {

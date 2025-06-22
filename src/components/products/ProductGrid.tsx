@@ -60,7 +60,8 @@ export function ProductGrid({ onAddToCart, onProductsLoaded, shouldRefetch = fal
   // Filter products by search and category
   const filteredProducts = products?.filter((product) => {
     const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase()) ||
-      (product.sku && product.sku.toLowerCase().includes(search.toLowerCase()));
+      (product.sku && product.sku.toLowerCase().includes(search.toLowerCase())) ||
+      (product.barcode && product.barcode.toLowerCase().includes(search.toLowerCase()));
     const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -83,7 +84,7 @@ export function ProductGrid({ onAddToCart, onProductsLoaded, shouldRefetch = fal
           <div className="flex items-center gap-4 bg-white p-3 rounded-lg shadow-sm">
             <Input
               type="search"
-              placeholder="Search products..."
+              placeholder="Search by name, SKU, or barcode..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="flex-1 border-gray-200 focus:ring-[#0ABAB5] focus:border-transparent"
@@ -112,6 +113,9 @@ export function ProductGrid({ onAddToCart, onProductsLoaded, shouldRefetch = fal
                 <div className="flex-1 min-w-0">
                   <h3 className="font-medium text-gray-900 truncate">{product.name}</h3>
                   <p className="text-sm text-gray-500">SKU: {product.sku || 'N/A'}</p>
+                  {product.barcode && (
+                    <p className="text-sm text-gray-500">Barcode: {product.barcode}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 ml-4">
                   <div className="flex flex-col gap-2">

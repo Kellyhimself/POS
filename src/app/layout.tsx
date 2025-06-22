@@ -5,7 +5,6 @@ import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import ReactQueryProvider from '@/components/providers/ReactQueryProvider';
 import { usePathname } from 'next/navigation';
-import { SettingsProvider } from '@/components/providers/SettingsProvider';
 import { UnifiedServiceProvider } from '@/components/providers/UnifiedServiceProvider';
 import { getUnifiedService } from '@/lib/services/UnifiedService';
 import { getModeManager } from '@/lib/mode/ModeManager';
@@ -14,6 +13,7 @@ import Header from '@/components/layout/Header';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { cn } from '@/lib/utils';
 import { SimplifiedAuthProvider, useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
+import { SettingsProvider } from '@/components/providers/SettingsProvider';
 
 import * as React from 'react';
 

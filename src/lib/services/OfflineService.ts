@@ -19,6 +19,23 @@ interface AppSettings {
   enable_vat_toggle_on_pos: boolean;
   vat_pricing_model: 'inclusive' | 'exclusive';
   default_vat_rate: number;
+  enable_etims_integration?: boolean;
+  // Cost protection settings
+  cost_protection_enabled?: boolean;
+  cost_protection_admin_approval?: boolean;
+  cost_protection_allow_below_cost?: boolean;
+  cost_protection_min_margin?: number;
+  cost_protection_show_warnings?: boolean;
+  cost_protection_auto_calculate?: boolean;
+  // Receipt settings
+  receipt_auto_print?: boolean;
+  receipt_auto_download?: boolean;
+  receipt_download_format?: 'pdf' | 'txt' | 'both';
+  receipt_print_delay?: number;
+  receipt_download_delay?: number;
+  receipt_show_inline?: boolean;
+  receipt_auto_close?: boolean;
+  receipt_close_delay?: number;
 }
 
 export interface SaleInput {
@@ -38,6 +55,7 @@ export interface SaleInput {
 export interface CreateProductInput {
   name: string;
   sku?: string;
+  barcode?: string | null;
   category?: string;
   store_id: string;
   quantity: number;
@@ -95,8 +113,12 @@ export class OfflineService {
 
   async createProduct(productData: CreateProductInput): Promise<Database['public']['Tables']['products']['Row']> {
     try {
+      // Convert empty barcode string to null for consistency with online mode
+      const barcodeValue = productData.barcode?.trim() || null;
+      
       const offlineProduct = await saveOfflineProduct({
         ...productData,
+        barcode: barcodeValue, // Use null instead of empty string
         id: crypto.randomUUID(), // Generate local ID
         synced: false
       });
@@ -248,21 +270,46 @@ export class OfflineService {
 
   async getPendingSyncCount(): Promise<number> {
     try {
-      // Fix: Use proper boolean comparison instead of equals(false)
-      const pendingProducts = await db.products
-        .where('synced')
-        .notEqual(true)
-        .count();
-
-      const pendingTransactions = await db.transactions
-        .where('synced')
-        .notEqual(true)
-        .count();
+      // First, ensure all records have valid synced values
+      await this.ensureValidSyncedValues();
+      
+      // Now use a safer approach to count pending items
+      const allProducts = await db.products.toArray();
+      const allTransactions = await db.transactions.toArray();
+      
+      const pendingProducts = allProducts.filter(p => p.synced !== true).length;
+      const pendingTransactions = allTransactions.filter(t => t.synced !== true).length;
 
       return pendingProducts + pendingTransactions;
     } catch (error) {
       console.error('Error getting pending sync count:', error);
       return 0;
+    }
+  }
+
+  private async ensureValidSyncedValues(): Promise<void> {
+    try {
+      // Update products with invalid synced values
+      await db.transaction('rw', [db.products, db.transactions], async () => {
+        const productsWithInvalidSynced = await db.products
+          .filter(p => p.synced === null || p.synced === undefined)
+          .toArray();
+        
+        for (const product of productsWithInvalidSynced) {
+          await db.products.update(product.id, { synced: false });
+        }
+
+        // Update transactions with invalid synced values
+        const transactionsWithInvalidSynced = await db.transactions
+          .filter(t => t.synced === null || t.synced === undefined)
+          .toArray();
+        
+        for (const transaction of transactionsWithInvalidSynced) {
+          await db.transactions.update(transaction.id, { synced: false });
+        }
+      });
+    } catch (error) {
+      console.error('Error ensuring valid synced values:', error);
     }
   }
 
@@ -561,14 +608,30 @@ export class OfflineService {
       const defaultSettings: AppSettings = {
         enable_vat_toggle_on_pos: true,
         vat_pricing_model: 'exclusive',
-        default_vat_rate: 16
+        default_vat_rate: 16,
+        enable_etims_integration: false,
+        // Cost protection settings
+        cost_protection_enabled: true,
+        cost_protection_admin_approval: true,
+        cost_protection_allow_below_cost: false,
+        cost_protection_min_margin: 5,
+        cost_protection_show_warnings: true,
+        cost_protection_auto_calculate: true,
+        // Receipt settings
+        receipt_auto_print: false,
+        receipt_auto_download: false,
+        receipt_download_format: 'pdf',
+        receipt_print_delay: 1000,
+        receipt_download_delay: 1000,
+        receipt_show_inline: true,
+        receipt_auto_close: false,
+        receipt_close_delay: 3000,
       };
       
       // Save default settings to database for future use
       await db.app_settings.put({
         id: 'global',
         ...defaultSettings,
-        enable_etims_integration: false,
         synced: false,
         updated_at: new Date().toISOString()
       });
@@ -581,14 +644,34 @@ export class OfflineService {
       return {
         enable_vat_toggle_on_pos: true,
         vat_pricing_model: 'exclusive',
-        default_vat_rate: 16
+        default_vat_rate: 16,
+        enable_etims_integration: false,
+        // Cost protection settings
+        cost_protection_enabled: true,
+        cost_protection_admin_approval: true,
+        cost_protection_allow_below_cost: false,
+        cost_protection_min_margin: 5,
+        cost_protection_show_warnings: true,
+        cost_protection_auto_calculate: true,
+        // Receipt settings
+        receipt_auto_print: false,
+        receipt_auto_download: false,
+        receipt_download_format: 'pdf',
+        receipt_print_delay: 1000,
+        receipt_download_delay: 1000,
+        receipt_show_inline: true,
+        receipt_auto_close: false,
+        receipt_close_delay: 3000,
       };
     }
   }
 
   async updateAppSettings(settings: Partial<AppSettings>): Promise<void> {
     try {
+      console.log('🔄 OfflineService.updateAppSettings: Updating settings:', settings);
       const current = await db.app_settings.get('global');
+      console.log('🔄 OfflineService.updateAppSettings: Current settings:', current);
+      
       const updatedSettings = {
         id: 'global',
         enable_vat_toggle_on_pos: true,
@@ -600,9 +683,12 @@ export class OfflineService {
         ...current,
         ...settings
       };
+      
+      console.log('🔄 OfflineService.updateAppSettings: Final settings to save:', updatedSettings);
       await db.app_settings.put(updatedSettings);
+      console.log('✅ OfflineService.updateAppSettings: Settings updated successfully');
     } catch (error) {
-      console.error('Error updating offline app settings:', error);
+      console.error('❌ OfflineService.updateAppSettings: Error updating offline app settings:', error);
       throw error;
     }
   }

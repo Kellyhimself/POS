@@ -27,11 +27,13 @@ export function ReceiptSettings() {
 
   const handleSave = async () => {
     try {
+      console.log('🔄 ReceiptSettings.handleSave: Saving settings:', localSettings);
       await updateReceiptSettings(localSettings);
       setHasChanges(false);
+      console.log('✅ ReceiptSettings.handleSave: Settings saved successfully');
       toast.success('Receipt settings saved successfully');
     } catch (error) {
-      console.error('Error saving receipt settings:', error);
+      console.error('❌ ReceiptSettings.handleSave: Error saving receipt settings:', error);
       toast.error('Error saving settings');
     }
   };

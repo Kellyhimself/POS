@@ -36,7 +36,9 @@ export function useReceiptSettings() {
   const loadReceiptSettings = async () => {
     try {
       setIsLoading(true);
+      console.log('🔄 useReceiptSettings.loadReceiptSettings: Loading receipt settings...');
       const appSettings = await getAppSettings();
+      console.log('🔄 useReceiptSettings.loadReceiptSettings: Raw app settings:', appSettings);
       
       // Extract receipt settings from app settings
       const receiptSettings: ReceiptSettings = {
@@ -50,6 +52,7 @@ export function useReceiptSettings() {
         closeDialogDelay: appSettings.receipt_close_delay ?? defaultReceiptSettings.closeDialogDelay,
       };
       
+      console.log('🔄 useReceiptSettings.loadReceiptSettings: Extracted receipt settings:', receiptSettings);
       setSettings(receiptSettings);
       console.log('✅ Receipt settings loaded:', receiptSettings);
     } catch (error) {
@@ -63,6 +66,7 @@ export function useReceiptSettings() {
 
   const updateReceiptSettings = async (newSettings: Partial<ReceiptSettings>) => {
     try {
+      console.log('🔄 useReceiptSettings.updateReceiptSettings: New settings:', newSettings);
       const updatedSettings = { ...settings, ...newSettings };
       setSettings(updatedSettings);
       
@@ -78,6 +82,7 @@ export function useReceiptSettings() {
         receipt_close_delay: updatedSettings.closeDialogDelay,
       };
       
+      console.log('🔄 useReceiptSettings.updateReceiptSettings: Converted to app settings format:', appSettingsUpdate);
       await updateAppSettings(appSettingsUpdate);
       console.log('✅ Receipt settings updated:', updatedSettings);
     } catch (error) {

@@ -19,6 +19,8 @@ import { CreateProductPopover } from "@/components/products/CreateProductPopover
 import { submitStockUpdateEtimsInvoice } from '@/lib/etims/utils';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { useDebounce } from '@/hooks/useDebounce';
+import { BarcodeInput } from '@/components/ui/BarcodeInput';
+import { toast } from 'sonner';
 
 const LOW_STOCK_THRESHOLD = 50;
 
@@ -26,6 +28,7 @@ interface Product {
   id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
   quantity: number;
   unit_of_measure: string;
   units_per_pack: number;
@@ -144,12 +147,44 @@ function EditableQuantityCell({
 
 export default function InventoryPage() {
   const { storeId, loading } = useSimplifiedAuth();
-  const { currentMode, isOnlineMode, getProducts, createPurchase, updateProduct } = useUnifiedService();
+  const { currentMode, getProducts, createPurchase, updateProduct } = useUnifiedService();
   const [search, setSearch] = useState('');
+  const [barcodeSearch, setBarcodeSearch] = useState('');
   const queryClient = useQueryClient();
 
   // Debounce search input to prevent excessive filtering
   const debouncedSearch = useDebounce(search, 300);
+
+  // Handle barcode scan
+  const handleBarcodeScan = async (barcode: string) => {
+    try {
+      console.log('🔍 Barcode scan:', barcode);
+      
+      // First try to find in local products
+      const localProduct = products?.find(p => p.barcode === barcode);
+      if (localProduct) {
+        setBarcodeSearch(barcode);
+        toast.success(`Found product: ${localProduct.name}`);
+        return;
+      }
+
+      // If not found locally, try API lookup
+      const response = await fetch(`/api/products/barcode/${encodeURIComponent(barcode)}?store_id=${storeId}`);
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setBarcodeSearch(barcode);
+        toast.success(`Found product: ${result.data.name}`);
+        // Refresh products to include the found product
+        await queryClient.invalidateQueries({ queryKey: ['products', storeId, currentMode] });
+      } else {
+        toast.error('Product not found for this barcode');
+      }
+    } catch (error) {
+      console.error('Barcode scan error:', error);
+      toast.error('Error scanning barcode');
+    }
+  };
 
   const columnHelper = createColumnHelper<Product>();
 
@@ -160,6 +195,10 @@ export default function InventoryPage() {
     }),
     columnHelper.accessor('sku', {
       header: 'SKU',
+      cell: info => info.getValue() || '-',
+    }),
+    columnHelper.accessor('barcode', {
+      header: 'Barcode',
       cell: info => info.getValue() || '-',
     }),
     columnHelper.accessor('quantity', {
@@ -248,21 +287,37 @@ export default function InventoryPage() {
 
   // Efficient search filtering using useMemo
   const filteredProducts = useMemo(() => {
-    if (!products || !debouncedSearch.trim()) {
-      return products || [];
+    if (!products) {
+      return [];
     }
 
-    const searchTerm = debouncedSearch.toLowerCase().trim();
-    return products.filter(product => {
-      const name = product.name.toLowerCase();
-      const sku = (product.sku || '').toLowerCase();
-      const category = (product.category || '').toLowerCase();
-      
-      return name.includes(searchTerm) || 
-             sku.includes(searchTerm) || 
-             category.includes(searchTerm);
-    });
-  }, [products, debouncedSearch]);
+    let filtered = products;
+
+    // Apply barcode search if present
+    if (barcodeSearch.trim()) {
+      filtered = filtered.filter(product => 
+        product.barcode === barcodeSearch.trim()
+      );
+    }
+
+    // Apply text search if present
+    if (debouncedSearch.trim()) {
+      const searchTerm = debouncedSearch.toLowerCase().trim();
+      filtered = filtered.filter(product => {
+        const name = product.name.toLowerCase();
+        const sku = (product.sku || '').toLowerCase();
+        const category = (product.category || '').toLowerCase();
+        const barcode = (product.barcode || '').toLowerCase();
+        
+        return name.includes(searchTerm) || 
+               sku.includes(searchTerm) || 
+               category.includes(searchTerm) ||
+               barcode.includes(searchTerm);
+      });
+    }
+
+    return filtered;
+  }, [products, debouncedSearch, barcodeSearch]);
 
   const table = useReactTable({
     data: filteredProducts,
@@ -395,6 +450,17 @@ export default function InventoryPage() {
       </div>
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-2">
+        {/* Barcode Scanner Section */}
+        <div className="w-full md:w-80">
+          <BarcodeInput
+            onScan={handleBarcodeScan}
+            placeholder="Scan barcode to find product..."
+            label="Barcode Scanner"
+            size="md"
+            showStatus={true}
+          />
+        </div>
+        
         <div className="flex gap-2 w-full md:w-auto">
           <div className="relative w-full md:w-64">
             <Input
@@ -426,12 +492,19 @@ export default function InventoryPage() {
             <CreateProductPopover storeId={storeId} />
           </div>
         </div>
-        {search && (
-          <div className="text-sm text-gray-600">
-            Showing {filteredProducts.length} of {products?.length || 0} products
-          </div>
-        )}
       </div>
+      
+      {/* Search Results Summary */}
+      {(search || barcodeSearch) && (
+        <div className="text-sm text-gray-600">
+          Showing {filteredProducts.length} of {products?.length || 0} products
+          {barcodeSearch && (
+            <span className="ml-2 text-blue-600">
+              • Barcode: {barcodeSearch}
+            </span>
+          )}
+        </div>
+      )}
 
       <section className="bg-white rounded-lg shadow p-3 md:p-4">
         <h2 className="text-lg md:text-xl font-bold mb-3 text-[#0ABAB5]">Product List</h2>
@@ -493,6 +566,9 @@ export default function InventoryPage() {
                       
                       <div className="font-medium text-gray-600">SKU:</div>
                       <div className="text-gray-800">{row.original.sku || '-'}</div>
+                      
+                      <div className="font-medium text-gray-600">Barcode:</div>
+                      <div className="text-gray-800">{row.original.barcode || '-'}</div>
                       
                       <div className="font-medium text-gray-600">Quantity:</div>
                       <div className="flex items-center gap-2">

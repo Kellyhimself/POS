@@ -7,6 +7,23 @@ interface AppSettings {
   enable_vat_toggle_on_pos: boolean;
   vat_pricing_model: 'inclusive' | 'exclusive';
   default_vat_rate: number;
+  enable_etims_integration?: boolean;
+  // Cost protection settings
+  cost_protection_enabled?: boolean;
+  cost_protection_admin_approval?: boolean;
+  cost_protection_allow_below_cost?: boolean;
+  cost_protection_min_margin?: number;
+  cost_protection_show_warnings?: boolean;
+  cost_protection_auto_calculate?: boolean;
+  // Receipt settings
+  receipt_auto_print?: boolean;
+  receipt_auto_download?: boolean;
+  receipt_download_format?: 'pdf' | 'txt' | 'both';
+  receipt_print_delay?: number;
+  receipt_download_delay?: number;
+  receipt_show_inline?: boolean;
+  receipt_auto_close?: boolean;
+  receipt_close_delay?: number;
 }
 
 export interface CreateProductInput {
@@ -369,9 +386,12 @@ export class UnifiedService {
   }
 
   async updateAppSettings(settings: Partial<AppSettings>): Promise<void> {
+    console.log('🔄 UnifiedService.updateAppSettings: Mode:', this.modeManager.getCurrentMode(), 'Settings:', settings);
     if (this.isOnlineMode()) {
+      console.log('🔄 UnifiedService.updateAppSettings: Using online service');
       return await this.onlineService.updateAppSettings(settings);
     } else {
+      console.log('🔄 UnifiedService.updateAppSettings: Using offline service');
       return await this.offlineService.updateAppSettings(settings);
     }
   }

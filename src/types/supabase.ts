@@ -11,23 +11,65 @@ export type Database = {
     Tables: {
       app_settings: {
         Row: {
+          cost_protection_admin_approval: boolean | null
+          cost_protection_allow_below_cost: boolean | null
+          cost_protection_auto_calculate: boolean | null
+          cost_protection_enabled: boolean | null
+          cost_protection_min_margin: number | null
+          cost_protection_show_warnings: boolean | null
           default_vat_rate: number
           enable_vat_toggle_on_pos: boolean
           id: string
+          receipt_auto_close: boolean | null
+          receipt_auto_download: boolean | null
+          receipt_auto_print: boolean | null
+          receipt_close_delay: number | null
+          receipt_download_delay: number | null
+          receipt_download_format: string | null
+          receipt_print_delay: number | null
+          receipt_show_inline: boolean | null
           updated_at: string
           vat_pricing_model: string
         }
         Insert: {
+          cost_protection_admin_approval?: boolean | null
+          cost_protection_allow_below_cost?: boolean | null
+          cost_protection_auto_calculate?: boolean | null
+          cost_protection_enabled?: boolean | null
+          cost_protection_min_margin?: number | null
+          cost_protection_show_warnings?: boolean | null
           default_vat_rate?: number
           enable_vat_toggle_on_pos?: boolean
           id?: string
+          receipt_auto_close?: boolean | null
+          receipt_auto_download?: boolean | null
+          receipt_auto_print?: boolean | null
+          receipt_close_delay?: number | null
+          receipt_download_delay?: number | null
+          receipt_download_format?: string | null
+          receipt_print_delay?: number | null
+          receipt_show_inline?: boolean | null
           updated_at?: string
           vat_pricing_model?: string
         }
         Update: {
+          cost_protection_admin_approval?: boolean | null
+          cost_protection_allow_below_cost?: boolean | null
+          cost_protection_auto_calculate?: boolean | null
+          cost_protection_enabled?: boolean | null
+          cost_protection_min_margin?: number | null
+          cost_protection_show_warnings?: boolean | null
           default_vat_rate?: number
           enable_vat_toggle_on_pos?: boolean
           id?: string
+          receipt_auto_close?: boolean | null
+          receipt_auto_download?: boolean | null
+          receipt_auto_print?: boolean | null
+          receipt_close_delay?: number | null
+          receipt_download_delay?: number | null
+          receipt_download_format?: string | null
+          receipt_print_delay?: number | null
+          receipt_show_inline?: boolean | null
           updated_at?: string
           vat_pricing_model?: string
         }
@@ -82,6 +124,7 @@ export type Database = {
       }
       products: {
         Row: {
+          barcode: string | null
           category: string | null
           cost_price: number
           id: string
@@ -100,6 +143,7 @@ export type Database = {
           wholesale_threshold: number | null
         }
         Insert: {
+          barcode?: string | null
           category?: string | null
           cost_price?: number
           id?: string
@@ -118,6 +162,7 @@ export type Database = {
           wholesale_threshold?: number | null
         }
         Update: {
+          barcode?: string | null
           category?: string | null
           cost_price?: number
           id?: string
@@ -406,11 +451,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      api_get_product_by_barcode: {
+        Args: { p_barcode: string; p_store_id: string }
+        Returns: Json
+      }
       create_product: {
         Args: {
           p_product: Database["public"]["CompositeTypes"]["product_input"]
         }
         Returns: {
+          barcode: string | null
           category: string | null
           cost_price: number
           id: string
@@ -428,29 +478,6 @@ export type Database = {
           wholesale_price: number | null
           wholesale_threshold: number | null
         }
-      }
-      create_products_batch: {
-        Args: {
-          p_products: Database["public"]["CompositeTypes"]["product_input"][]
-        }
-        Returns: {
-          category: string | null
-          cost_price: number
-          id: string
-          input_vat_amount: number | null
-          name: string
-          parent_product_id: string | null
-          quantity: number
-          retail_price: number | null
-          selling_price: number
-          sku: string | null
-          store_id: string | null
-          unit_of_measure: string
-          units_per_pack: number
-          vat_status: boolean | null
-          wholesale_price: number | null
-          wholesale_threshold: number | null
-        }[]
       }
       create_sale: {
         Args: {
@@ -463,6 +490,28 @@ export type Database = {
           p_timestamp?: string
         }
         Returns: string
+      }
+      get_product_by_barcode: {
+        Args: { p_barcode: string; p_store_id: string }
+        Returns: {
+          id: string
+          name: string
+          sku: string
+          category: string
+          cost_price: number
+          selling_price: number
+          retail_price: number
+          wholesale_price: number
+          wholesale_threshold: number
+          quantity: number
+          unit_of_measure: string
+          units_per_pack: number
+          vat_status: boolean
+          input_vat_amount: number
+          barcode: string
+          store_id: string
+          parent_product_id: string
+        }[]
       }
       get_product_history: {
         Args: { p_product_id: string }
@@ -485,6 +534,10 @@ export type Database = {
           vat_status: boolean
         }[]
       }
+      is_barcode_unique: {
+        Args: { p_barcode: string; p_store_id: string; p_exclude_id?: string }
+        Returns: boolean
+      }
       update_stock: {
         Args: {
           p_product_id: string
@@ -492,6 +545,7 @@ export type Database = {
           p_store_id?: string
         }
         Returns: {
+          barcode: string | null
           category: string | null
           cost_price: number
           id: string
@@ -515,6 +569,7 @@ export type Database = {
           p_updates: Database["public"]["CompositeTypes"]["stock_update_input"][]
         }
         Returns: {
+          barcode: string | null
           category: string | null
           cost_price: number
           id: string
@@ -532,6 +587,10 @@ export type Database = {
           wholesale_price: number | null
           wholesale_threshold: number | null
         }[]
+      }
+      validate_barcode_format: {
+        Args: { barcode_text: string }
+        Returns: boolean
       }
     }
     Enums: {
@@ -555,6 +614,7 @@ export type Database = {
         parent_product_id: string | null
         selling_price: number | null
         input_vat_amount: number | null
+        barcode: string | null
       }
       stock_update_input: {
         product_id: string | null

@@ -8,13 +8,15 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSettings } from '@/components/providers/SettingsProvider';
-import { Loader2, RefreshCw, Wifi, WifiOff, Calculator, Settings as SettingsIcon, Database, Receipt } from 'lucide-react';
+import { useCostProtectionSettings } from '@/hooks/useCostProtectionSettings';
+import { Loader2, RefreshCw, Wifi, WifiOff, Calculator, Settings as SettingsIcon, Database, Receipt, Shield } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { ModeSettings } from '@/components/settings/ModeSettings';
 import { ReceiptSettings } from '@/components/settings/ReceiptSettings';
+import { CostProtectionSettings } from '@/components/settings/CostProtectionSettings';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'vat' | 'mode' | 'receipt' | 'sync' | 'advanced'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'vat' | 'mode' | 'receipt' | 'sync' | 'advanced' | 'costProtection'>('general');
   const { settings, isLoading, isSyncing, updateSettings, syncSettings } = useSettings();
   const { mode } = useSimplifiedAuth();
 
@@ -25,6 +27,7 @@ export default function SettingsPage() {
     { key: 'receipt', label: 'Receipt Settings', icon: Receipt },
     { key: 'sync', label: 'Sync Settings', icon: RefreshCw },
     { key: 'advanced', label: 'Advanced', icon: Database },
+    { key: 'costProtection', label: 'Cost Protection', icon: Shield },
   ];
 
   const handleVatToggleChange = async (checked: boolean) => {
@@ -306,6 +309,24 @@ export default function SettingsPage() {
     </div>
   );
 
+  const renderCostProtectionSettings = () => (
+    <div className="space-y-6">
+      <Card className="border-none shadow-md">
+        <CardHeader className="bg-primary/5">
+          <CardTitle className="text-xl text-primary">Cost Protection Settings</CardTitle>
+          <CardDescription>Configure cost protection settings</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1">
+              <CostProtectionSettings />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -363,6 +384,7 @@ export default function SettingsPage() {
         {activeTab === 'receipt' && renderReceiptSettings()}
         {activeTab === 'sync' && renderSyncSettings()}
         {activeTab === 'advanced' && renderAdvancedSettings()}
+        {activeTab === 'costProtection' && renderCostProtectionSettings()}
       </div>
     </div>
   );

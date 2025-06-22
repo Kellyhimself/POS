@@ -2,7 +2,11 @@ import Dexie, { Table } from 'dexie';
 import { Database } from '@/types/supabase';
 
 // Define extended types for offline database
-type OfflineProduct = Database['public']['Tables']['products']['Row'] & { synced: boolean; created_at?: string };
+type OfflineProduct = Database['public']['Tables']['products']['Row'] & { 
+  synced: boolean; 
+  created_at?: string;
+  barcode?: string | null;
+};
 type OfflineTransaction = {
     id: string;
     store_id: string;
@@ -48,6 +52,22 @@ type OfflineAppSettings = {
   vat_pricing_model: 'inclusive' | 'exclusive';
   default_vat_rate: number;
   enable_etims_integration: boolean;
+  // Cost protection settings
+  cost_protection_enabled?: boolean;
+  cost_protection_admin_approval?: boolean;
+  cost_protection_allow_below_cost?: boolean;
+  cost_protection_min_margin?: number;
+  cost_protection_show_warnings?: boolean;
+  cost_protection_auto_calculate?: boolean;
+  // Receipt settings
+  receipt_auto_print?: boolean;
+  receipt_auto_download?: boolean;
+  receipt_download_format?: 'pdf' | 'txt' | 'both';
+  receipt_print_delay?: number;
+  receipt_download_delay?: number;
+  receipt_show_inline?: boolean;
+  receipt_auto_close?: boolean;
+  receipt_close_delay?: number;
   synced: boolean;
   updated_at: string;
 };
@@ -67,8 +87,8 @@ export class OfflineDB extends Dexie {
 
   constructor() {
     super('OfflineDB');
-    this.version(5).stores({
-      products: 'id, store_id, name, sku, category, parent_product_id, synced, created_at',
+    this.version(7).stores({
+      products: 'id, store_id, name, sku, category, parent_product_id, barcode, synced, created_at',
       stores: 'id, name, address, kra_pin, vat_number, etims_username, etims_password, kra_token, mpesa_details',
       transactions: 'id, store_id, payment_method, total_amount, vat_total, timestamp, synced, created_at',
       sale_items: 'id, sale_id, product_id, quantity, price, vat_amount, sale_mode, timestamp, created_at',
@@ -85,10 +105,22 @@ export class OfflineDB extends Dexie {
           if (!product.created_at) {
             product.created_at = new Date().toISOString();
           }
+          // Add barcode field if it doesn't exist
+          if (!('barcode' in product)) {
+            (product as OfflineProduct).barcode = null;
+          }
+          // Ensure synced field is a valid boolean
+          if (product.synced === null || product.synced === undefined) {
+            product.synced = false;
+          }
         }),
         dbtx.table('transactions').toCollection().modify((transaction: OfflineTransaction) => {
           if (!transaction.created_at) {
             transaction.created_at = new Date().toISOString();
+          }
+          // Ensure synced field is a valid boolean
+          if (transaction.synced === null || transaction.synced === undefined) {
+            transaction.synced = false;
           }
         }),
         dbtx.table('sale_items').toCollection().modify((item: OfflineSaleItem) => {
@@ -100,10 +132,86 @@ export class OfflineDB extends Dexie {
           if (!update.created_at) {
             update.created_at = new Date().toISOString();
           }
+          // Ensure synced field is a valid boolean
+          if (update.synced === null || update.synced === undefined) {
+            update.synced = false;
+          }
         }),
         dbtx.table('etims_submissions').toCollection().modify((submission: OfflineEtimsSubmission) => {
           if (!submission.created_at) {
             submission.created_at = new Date().toISOString();
+          }
+          // Ensure synced field is a valid boolean
+          if (submission.synced === null || submission.synced === undefined) {
+            submission.synced = false;
+          }
+        }),
+        dbtx.table('purchases').toCollection().modify((purchase: OfflinePurchase) => {
+          // Ensure synced field is a valid boolean
+          if (purchase.synced === null || purchase.synced === undefined) {
+            purchase.synced = false;
+          }
+        }),
+        dbtx.table('purchase_items').toCollection().modify((item: OfflinePurchaseItem) => {
+          // Ensure synced field is a valid boolean
+          if (item.synced === null || item.synced === undefined) {
+            item.synced = false;
+          }
+        }),
+        dbtx.table('suppliers').toCollection().modify((supplier: OfflineSupplier) => {
+          // Ensure synced field is a valid boolean
+          if (supplier.synced === null || supplier.synced === undefined) {
+            supplier.synced = false;
+          }
+        }),
+        dbtx.table('app_settings').toCollection().modify((settings: OfflineAppSettings) => {
+          // Add cost protection settings if they don't exist
+          if (!('cost_protection_enabled' in settings)) {
+            (settings as OfflineAppSettings).cost_protection_enabled = true;
+          }
+          if (!('cost_protection_admin_approval' in settings)) {
+            (settings as OfflineAppSettings).cost_protection_admin_approval = true;
+          }
+          if (!('cost_protection_allow_below_cost' in settings)) {
+            (settings as OfflineAppSettings).cost_protection_allow_below_cost = false;
+          }
+          if (!('cost_protection_min_margin' in settings)) {
+            (settings as OfflineAppSettings).cost_protection_min_margin = 5;
+          }
+          if (!('cost_protection_show_warnings' in settings)) {
+            (settings as OfflineAppSettings).cost_protection_show_warnings = true;
+          }
+          if (!('cost_protection_auto_calculate' in settings)) {
+            (settings as OfflineAppSettings).cost_protection_auto_calculate = true;
+          }
+          // Add receipt settings if they don't exist
+          if (!('receipt_auto_print' in settings)) {
+            (settings as OfflineAppSettings).receipt_auto_print = false;
+          }
+          if (!('receipt_auto_download' in settings)) {
+            (settings as OfflineAppSettings).receipt_auto_download = false;
+          }
+          if (!('receipt_download_format' in settings)) {
+            (settings as OfflineAppSettings).receipt_download_format = 'pdf';
+          }
+          if (!('receipt_print_delay' in settings)) {
+            (settings as OfflineAppSettings).receipt_print_delay = 1000;
+          }
+          if (!('receipt_download_delay' in settings)) {
+            (settings as OfflineAppSettings).receipt_download_delay = 1000;
+          }
+          if (!('receipt_show_inline' in settings)) {
+            (settings as OfflineAppSettings).receipt_show_inline = true;
+          }
+          if (!('receipt_auto_close' in settings)) {
+            (settings as OfflineAppSettings).receipt_auto_close = false;
+          }
+          if (!('receipt_close_delay' in settings)) {
+            (settings as OfflineAppSettings).receipt_close_delay = 3000;
+          }
+          // Ensure synced field is a valid boolean
+          if (settings.synced === null || settings.synced === undefined) {
+            settings.synced = false;
           }
         })
       ]);
@@ -181,7 +289,7 @@ export async function getPendingTransactions(storeId: string) {
   return await db.transactions
     .where('store_id')
     .equals(storeId)
-    .and(transaction => !transaction.synced)
+    .and(transaction => transaction.synced === false)
     .toArray();
 }
 
@@ -841,7 +949,52 @@ export async function updateOfflineProductQuantity(productId: string, quantityCh
   return product;
 }
 
+// Barcode validation function for offline mode
+export function validateOfflineBarcodeFormat(barcode: string | null): boolean {
+  // Allow null and empty strings
+  if (barcode === null || barcode === undefined || barcode.trim() === '') {
+    return true;
+  }
+  
+  const trimmedBarcode = barcode.trim();
+  
+  // EAN-13: 13 digits
+  if (/^\d{13}$/.test(trimmedBarcode)) {
+    return true;
+  }
+  
+  // UPC-A: 12 digits
+  if (/^\d{12}$/.test(trimmedBarcode)) {
+    return true;
+  }
+  
+  // Code 128: 1-48 alphanumeric characters
+  if (/^[A-Za-z0-9\-\.\/\+\s]{1,48}$/.test(trimmedBarcode)) {
+    return true;
+  }
+  
+  // Code 39: 1-43 alphanumeric characters
+  if (/^[A-Z0-9\-\.\/\+\s]{1,43}$/.test(trimmedBarcode)) {
+    return true;
+  }
+  
+  // QR Code: variable length (more permissive)
+  if (trimmedBarcode.length <= 100) {
+    return true;
+  }
+  
+  return false;
+}
+
 export async function saveOfflineProduct(product: Database['public']['Tables']['products']['Insert']) {
+  // Validate barcode format if provided
+  if (product.barcode && !validateOfflineBarcodeFormat(product.barcode)) {
+    throw new Error(`Invalid barcode format: ${product.barcode}`);
+  }
+  
+  // Convert empty barcode string to null
+  const barcodeValue = product.barcode?.trim() || null;
+  
   const offlineProduct: OfflineProduct = {
     id: crypto.randomUUID(),
     name: product.name,
@@ -853,12 +1006,13 @@ export async function saveOfflineProduct(product: Database['public']['Tables']['
     wholesale_price: product.wholesale_price || null,
     wholesale_threshold: product.wholesale_threshold || null,
     cost_price: product.cost_price || 0,
-    vat_status: product.vat_status === true || (typeof product.vat_status === 'string' && product.vat_status === 'vatable'),
+    vat_status: product.vat_status === true || (typeof product.vat_status === 'string' && product.vat_status === 'vatable') || false,
     category: product.category || null,
     store_id: product.store_id || null,
     parent_product_id: product.parent_product_id || null,
     selling_price: product.selling_price || 0,
     input_vat_amount: product.input_vat_amount || null,
+    barcode: barcodeValue, // Use validated barcode value
     synced: false
   };
 
@@ -1135,7 +1289,7 @@ export async function saveOfflineStore(store: {
   kra_token?: string;
   mpesa_details?: string;
 }) {
-  console.log('💾 Saving store to offline database:', { id: store.id, name: store.name });
+  console.log('🔄 saveOfflineStore: Saving store to offline database:', { id: store.id, name: store.name });
   
   const offlineStore: Database['public']['Tables']['stores']['Row'] = {
     id: store.id,
@@ -1146,9 +1300,7 @@ export async function saveOfflineStore(store: {
     etims_username: store.etims_username || null,
     etims_password: store.etims_password || null,
     kra_token: store.kra_token || null,
-    mpesa_details: store.mpesa_details || null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    mpesa_details: store.mpesa_details || null
   };
 
   await db.stores.put(offlineStore);
@@ -1203,5 +1355,113 @@ export async function logInvalidPurchaseUUIDs() {
     console.warn('⚠️ Invalid purchase items with missing/empty UUIDs:', invalidItems);
   } else {
     console.log('✅ No invalid purchase items with missing/empty UUIDs found.');
+  }
+} 
+
+export async function getProductByBarcode(barcode: string, storeId: string): Promise<OfflineProduct | undefined> {
+  console.log('🔍 getProductByBarcode: Looking up product by barcode:', { barcode, storeId });
+  
+  try {
+    const product = await db.products
+      .where(['barcode', 'store_id'])
+      .equals([barcode, storeId])
+      .first();
+    
+    if (product) {
+      console.log('✅ getProductByBarcode: Product found:', { 
+        id: product.id, 
+        name: product.name, 
+        barcode: product.barcode,
+        quantity: product.quantity 
+      });
+    } else {
+      console.log('⚠️ getProductByBarcode: Product not found for barcode:', barcode);
+    }
+    
+    return product;
+  } catch (error) {
+    console.error('❌ getProductByBarcode: Error looking up product:', error);
+    return undefined;
+  }
+}
+
+export async function validateBarcodeUniqueness(barcode: string, storeId: string, excludeProductId?: string): Promise<boolean> {
+  console.log('🔍 validateBarcodeUniqueness: Checking barcode uniqueness:', { barcode, storeId, excludeProductId });
+  
+  try {
+    let query = db.products
+      .where(['barcode', 'store_id'])
+      .equals([barcode, storeId]);
+    
+    if (excludeProductId) {
+      query = query.filter(product => product.id !== excludeProductId);
+    }
+    
+    const existingProducts = await query.toArray();
+    const isUnique = existingProducts.length === 0;
+    
+    console.log('✅ validateBarcodeUniqueness: Result:', { 
+      barcode, 
+      isUnique, 
+      existingCount: existingProducts.length 
+    });
+    
+    return isUnique;
+  } catch (error) {
+    console.error('❌ validateBarcodeUniqueness: Error checking uniqueness:', error);
+    return false;
+  }
+}
+
+export async function updateProductBarcode(productId: string, barcode: string | null): Promise<OfflineProduct | null> {
+  console.log('🔄 updateProductBarcode: Updating product barcode:', { productId, barcode });
+  
+  try {
+    const product = await db.products.get(productId);
+    if (!product) {
+      console.error('❌ updateProductBarcode: Product not found:', productId);
+      return null;
+    }
+    
+    const updatedProduct: OfflineProduct = {
+      ...product,
+      barcode,
+      synced: false // Mark as unsynced for sync
+    };
+    
+    await db.products.put(updatedProduct);
+    console.log('✅ updateProductBarcode: Product barcode updated successfully');
+    
+    return updatedProduct;
+  } catch (error) {
+    console.error('❌ updateProductBarcode: Error updating product barcode:', error);
+    return null;
+  }
+}
+
+export async function getProductsByBarcodePattern(pattern: string, storeId: string): Promise<OfflineProduct[]> {
+  console.log('🔍 getProductsByBarcodePattern: Searching products by barcode pattern:', { pattern, storeId });
+  
+  try {
+    const products = await db.products
+      .where('store_id')
+      .equals(storeId)
+      .filter(product => 
+        product.barcode !== null && 
+        product.barcode !== undefined &&
+        product.barcode.toLowerCase().includes(pattern.toLowerCase())
+      )
+      .toArray();
+    
+    console.log('✅ getProductsByBarcodePattern: Found products:', { 
+      pattern, 
+      count: products.length,
+      products: products.map(p => ({ id: p.id, name: p.name, barcode: p.barcode }))
+    });
+    
+    return products;
+  } catch (error) {
+    console.error('❌ getProductsByBarcodePattern: Error searching products:', error);
+    return [];
   }
 } 

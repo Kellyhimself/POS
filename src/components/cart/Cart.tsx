@@ -3,9 +3,10 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { Database } from '@/types/supabase';
 import { useVatSettings } from '@/hooks/useVatSettings';
+import { useCostProtectionSettings } from '@/hooks/useCostProtectionSettings';
 
 type Product = Database['public']['Tables']['products']['Row'];
 
@@ -49,6 +50,7 @@ export function Cart({
   onDiscountValueChange,
 }: CartProps) {
   const { calculatePrice, calculateVatAmount, isVatEnabled } = useVatSettings();
+  const { settings: costProtectionSettings } = useCostProtectionSettings();
   
   // Calculate subtotal using dynamically calculated display prices
   const subtotal = items.reduce((sum, item) => {
@@ -73,10 +75,111 @@ export function Cart({
     return sum + (vatAmount * item.quantity);
   }, 0);
 
+  // Check for cost protection violations
+  const costProtectionWarnings = items
+    .map((item, index) => {
+      if (!costProtectionSettings.enableCostProtection || !costProtectionSettings.showCostWarnings) {
+        return null;
+      }
+
+      const costPrice = item.product.cost_price || 0;
+      const sellingPrice = item.price;
+      const profitMargin = costPrice > 0 ? ((sellingPrice - costPrice) / costPrice) * 100 : 0;
+      
+      // Check if selling below cost
+      if (sellingPrice < costPrice) {
+        return {
+          type: 'below_cost' as const,
+          message: `${item.product.name} is being sold below cost price`,
+          itemIndex: index,
+          severity: 'high' as const
+        };
+      }
+      
+      // Check if profit margin is below minimum
+      if (costProtectionSettings.minimumProfitMargin && profitMargin < costProtectionSettings.minimumProfitMargin) {
+        return {
+          type: 'low_margin' as const,
+          message: `${item.product.name} profit margin (${profitMargin.toFixed(1)}%) is below minimum (${costProtectionSettings.minimumProfitMargin}%)`,
+          itemIndex: index,
+          severity: 'medium' as const
+        };
+      }
+      
+      return null;
+    })
+    .filter(Boolean);
+
+  // Check total cart cost protection violations
+  const totalCartWarnings = [];
+  if (costProtectionSettings.enableCostProtection && costProtectionSettings.showCostWarnings && items.length > 0) {
+    // Calculate total cost and total selling price
+    const totalCost = items.reduce((sum, item) => {
+      const costPrice = item.product.cost_price || 0;
+      return sum + (costPrice * item.quantity);
+    }, 0);
+
+    const totalSellingPriceBeforeDiscount = items.reduce((sum, item) => {
+      return sum + (item.price * item.quantity);
+    }, 0);
+
+    // Calculate discount amount
+    const discountAmount = discountType === 'percentage' 
+      ? (subtotal * (discountValue / 100))
+      : discountType === 'cash' 
+        ? Math.min(discountValue, subtotal)
+        : 0;
+
+    const totalSellingPriceAfterDiscount = totalSellingPriceBeforeDiscount - discountAmount;
+
+    // Check if total cart is below cost
+    if (totalSellingPriceAfterDiscount < totalCost) {
+      totalCartWarnings.push({
+        type: 'total_below_cost' as const,
+        message: `Total cart value (KES ${totalSellingPriceAfterDiscount.toFixed(2)}) is below total cost (KES ${totalCost.toFixed(2)}) after discount`,
+        severity: 'high' as const
+      });
+    }
+
+    // Calculate total profit margin
+    const totalProfitMargin = totalCost > 0 ? ((totalSellingPriceAfterDiscount - totalCost) / totalCost) * 100 : 0;
+    
+    if (costProtectionSettings.minimumProfitMargin && totalProfitMargin < costProtectionSettings.minimumProfitMargin) {
+      totalCartWarnings.push({
+        type: 'total_low_margin' as const,
+        message: `Total cart profit margin (${totalProfitMargin.toFixed(1)}%) is below minimum (${costProtectionSettings.minimumProfitMargin}%) after discount`,
+        severity: 'medium' as const
+      });
+    }
+  }
+
+  // Combine individual item warnings with total cart warnings
+  const allWarnings = [...costProtectionWarnings, ...totalCartWarnings];
+
   return (
     <div className="h-full flex flex-col bg-[#F7F9FC]">
       <div className="h-[40%] overflow-y-auto p-3">
         <h2 className="text-lg font-bold text-[#0ABAB5] mb-2">Cart</h2>
+        
+        {/* Cost Protection Warnings */}
+        {allWarnings.length > 0 && (
+          <div className="mb-3 space-y-2">
+            {allWarnings.map((warning, index) => (
+              <div
+                key={index}
+                className={`flex items-center gap-2 p-2 rounded-md text-xs ${
+                  warning?.severity === 'high' 
+                    ? 'bg-red-50 border border-red-200 text-red-700' 
+                    : 'bg-yellow-50 border border-yellow-200 text-yellow-700'
+                }`}
+              >
+                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                <span>{warning?.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        
         {items.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-2">No items in cart</p>
         ) : (
@@ -86,8 +189,15 @@ export function Cart({
               const dynamicDisplayPrice = calculatePrice(item.price, item.product.vat_status ?? false);
               const dynamicVatAmount = calculateVatAmount(item.price, item.product.vat_status ?? false);
               
+              // Check if this item has cost protection warnings
+              const itemWarning = allWarnings.find(w => 
+                w && 'itemIndex' in w && (w as { itemIndex: number }).itemIndex === index
+              );
+              
               return (
-                <div key={item.product.id + '-' + index} className="bg-white rounded-lg shadow p-2">
+                <div key={item.product.id + '-' + index} className={`bg-white rounded-lg shadow p-2 ${
+                  itemWarning ? 'border-2 border-red-200' : ''
+                }`}>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-900 truncate">{item.product.name}</p>
                     <div className="flex items-center gap-1">
@@ -160,6 +270,14 @@ export function Cart({
             </div>
           )}
           
+          {/* Cost Information (when cost protection is enabled) */}
+          {costProtectionSettings.enableCostProtection && items.length > 0 && (
+            <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-gray-100">
+              <span>Total Cost:</span>
+              <span>KES {items.reduce((sum, item) => sum + ((item.product.cost_price || 0) * item.quantity), 0).toFixed(2)}</span>
+            </div>
+          )}
+          
           {/* Discount Section */}
           <div className="space-y-2 pt-2 border-t border-gray-200">
             <div className="flex items-center justify-between">
@@ -203,17 +321,17 @@ export function Cart({
         </div>
 
         <div className="space-y-3">
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="vat"
-              checked={isVatEnabled}
-              onCheckedChange={onVatToggle}
-              className="data-[state=checked]:bg-[#0ABAB5]"
-            />
-            <Label htmlFor="vat" className="text-xs text-gray-700">Enable VAT</Label>
-          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="vat"
+                checked={isVatEnabled}
+                onCheckedChange={onVatToggle}
+                className="data-[state=checked]:bg-[#0ABAB5]"
+              />
+              <Label htmlFor="vat" className="text-xs text-gray-700">Enable VAT</Label>
+            </div>
 
-          <div className="space-y-3">
             <RadioGroup value={paymentMethod} onValueChange={onPaymentMethodChange} className="flex flex-row gap-4">
               <div className="flex items-center space-x-1">
                 <RadioGroupItem value="cash" id="cash" className="text-[#0ABAB5] border-[#0ABAB5]" />
@@ -228,22 +346,22 @@ export function Cart({
                 <Label htmlFor="credit" className="text-xs text-gray-700">Credit</Label>
               </div>
             </RadioGroup>
-
-            <Button
-              onClick={onCheckout}
-              disabled={items.length === 0 || isProcessing}
-              className="w-full h-9 text-sm bg-[#0ABAB5] hover:bg-[#0ABAB5]/90 text-white font-medium rounded-lg transition-colors"
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                'Complete Sale'
-              )}
-            </Button>
           </div>
+
+          <Button
+            onClick={onCheckout}
+            disabled={items.length === 0 || isProcessing}
+            className="w-full h-9 text-sm bg-[#0ABAB5] hover:bg-[#0ABAB5]/90 text-white font-medium rounded-lg transition-colors"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              'Complete Sale'
+            )}
+          </Button>
         </div>
       </div>
     </div>
