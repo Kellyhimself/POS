@@ -19,55 +19,62 @@ const DateRangePicker = ({ startDate, endDate, onStartDateChange, onEndDateChang
   isSingleDay: boolean;
 }) => {
   return (
-    <div className="flex items-center gap-2">
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant={"outline"}
-            className={cn(
-              "w-[240px] justify-start text-left font-normal",
-              !startDate && "text-muted-foreground"
-            )}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {startDate ? format(startDate, "PPP") : <span>{isSingleDay ? 'Select Date' : 'Start date'}</span>}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={startDate}
-            onSelect={onStartDateChange}
-            initialFocus
-            required
-          />
-        </PopoverContent>
-      </Popover>
-      {!isSingleDay && <span>to</span>}
-      {!isSingleDay && (
+    <div className="flex flex-col md:flex-row w-full min-w-0 gap-2">
+      <div className="w-full md:w-auto">
         <Popover>
           <PopoverTrigger asChild>
             <Button
               variant={"outline"}
               className={cn(
-                "w-[240px] justify-start text-left font-normal",
-                !endDate && "text-muted-foreground"
+                "w-[240px] justify-start text-left font-normal xs:w-full sm:w-full",
+                !startDate && "text-muted-foreground"
               )}
             >
               <CalendarIcon className="mr-2 h-4 w-4" />
-              {endDate ? format(endDate, "PPP") : <span>End date</span>}
+              {startDate ? format(startDate, "PPP") : <span>{isSingleDay ? 'Select Date' : 'Start date'}</span>}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
             <Calendar
               mode="single"
-              selected={endDate}
-              onSelect={onEndDateChange}
+              selected={startDate}
+              onSelect={onStartDateChange}
               initialFocus
               required
             />
           </PopoverContent>
         </Popover>
+      </div>
+      {!isSingleDay && (
+        <>
+          <span className="block md:hidden text-gray-500 text-center my-1">to</span>
+          <span className="hidden md:block mx-2 text-gray-500 self-center">to</span>
+          <div className="w-full md:w-auto">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={"outline"}
+                  className={cn(
+                    "w-[240px] justify-start text-left font-normal xs:w-full sm:w-full",
+                    !endDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {endDate ? format(endDate, "PPP") : <span>End date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={endDate}
+                  onSelect={onEndDateChange}
+                  initialFocus
+                  required
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </>
       )}
     </div>
   );
@@ -194,32 +201,30 @@ const PurchaseHistoryPage: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold">Purchase History</h1>
+    <div className="p-6 xs:p-2 sm:p-3 md:p-4">
+      <div className="mb-6 xs:mb-3 sm:mb-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 xs:mb-2 sm:mb-3">
+          <h1 className="text-2xl xs:text-lg sm:text-xl font-bold">Purchase History</h1>
         </div>
-        
         {/* VAT/Overview Filter Dropdown */}
-        <div className="mb-4 flex gap-2 items-center">
+        <div className="mb-4 flex gap-2 items-center xs:flex-col xs:items-start xs:gap-1">
           <label htmlFor="purchase-filter-mode" className="text-sm font-medium text-gray-700">View:</label>
           <select
             id="purchase-filter-mode"
             value={filterMode}
             onChange={e => setFilterMode(e.target.value as 'overview' | 'filtered')}
-            className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 xs:w-full"
           >
             <option value="filtered">Filtered</option>
             <option value="overview">Overview</option>
           </select>
         </div>
-
         {/* Filters */}
-        <div className="flex flex-wrap gap-4 mb-4">
-          <div className="flex flex-wrap gap-4 flex-grow">
+        <div className="flex flex-col md:flex-row gap-4 mb-4 w-full min-w-0">
+          <div className="flex flex-col md:flex-row gap-4 w-full min-w-0">
             {/* Single Day Toggle */}
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-sm font-medium">
+            <div className="flex items-center gap-2 xs:gap-1 xs:w-full sm:w-full w-full">
+              <label className="flex items-center gap-2 text-sm font-medium w-full">
                 <input
                   type="checkbox"
                   checked={isSingleDay}
@@ -229,8 +234,8 @@ const PurchaseHistoryPage: React.FC = () => {
                 Single Day
               </label>
             </div>
-            
             {/* Date Range Picker */}
+            <div className="xs:w-full sm:w-full w-full">
             <DateRangePicker
               startDate={startDate}
               endDate={endDate}
@@ -238,44 +243,43 @@ const PurchaseHistoryPage: React.FC = () => {
               onEndDateChange={setEndDate}
               isSingleDay={isSingleDay}
             />
-
+            </div>
             {/* Search Filter */}
-            <div className="relative flex-grow">
+            <div className="relative xs:w-full sm:w-full w-full min-w-0">
               <input
                 type="text"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 placeholder="Search by supplier, invoice number, or product name..."
-                className="border-2 border-blue-400 focus:border-blue-600 rounded px-2 py-1 w-full transition-colors duration-200"
+                className="border-2 border-blue-400 focus:border-blue-600 rounded px-2 py-1 w-full transition-colors duration-200 xs:w-full sm:w-full min-w-0"
               />
             </div>
           </div>
         </div>
-
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Total Purchases</h3>
-            <p className="text-2xl font-bold">{summary.totalPurchases}</p>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 xs:gap-2 sm:gap-3 mb-6 xs:mb-3 sm:mb-4">
+          <div className="bg-white p-4 xs:p-2 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm xs:text-xs">Total Purchases</h3>
+            <p className="text-2xl xs:text-lg font-bold">{summary.totalPurchases}</p>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Total Amount</h3>
-            <p className="text-2xl font-bold">KES {summary.totalAmount.toLocaleString()}</p>
+          <div className="bg-white p-4 xs:p-2 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm xs:text-xs">Total Amount</h3>
+            <p className="text-2xl xs:text-lg font-bold">KES {summary.totalAmount.toLocaleString()}</p>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Total Input VAT</h3>
-            <p className="text-2xl font-bold">KES {summary.totalVat.toLocaleString()}</p>
+          <div className="bg-white p-4 xs:p-2 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm xs:text-xs">Total Input VAT</h3>
+            <p className="text-2xl xs:text-lg font-bold">KES {summary.totalVat.toLocaleString()}</p>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-gray-500 text-sm">Average Purchase</h3>
-            <p className="text-2xl font-bold">KES {summary.averagePurchase.toLocaleString()}</p>
+          <div className="bg-white p-4 xs:p-2 rounded-lg shadow">
+            <h3 className="text-gray-500 text-sm xs:text-xs">Average Purchase</h3>
+            <p className="text-2xl xs:text-lg font-bold">KES {summary.averagePurchase.toLocaleString()}</p>
           </div>
         </div>
       </div>
-
-      {/* Table */}
+      {/* Table for md+ screens, Cards for xs/sm */}
+      <div className="hidden md:block">
       <div className="overflow-x-auto bg-white rounded-lg shadow">
-        <table className="min-w-full">
+          <table className="min-w-full text-sm">
           <thead>
             <tr className="bg-gray-100">
               <th className="px-4 py-2 text-left">Date</th>
@@ -320,7 +324,6 @@ const PurchaseHistoryPage: React.FC = () => {
                           </thead>
                           <tbody>
                             {purchase.items.map(item => {
-                              // Find product name by id
                               const product = products.find(p => p.id === item.product_id);
                               return (
                               <tr key={item.id} className="border-b hover:bg-gray-50">
@@ -346,6 +349,64 @@ const PurchaseHistoryPage: React.FC = () => {
             )}
           </tbody>
         </table>
+        </div>
+      </div>
+      {/* Card view for xs/sm screens */}
+      <div className="block md:hidden space-y-4">
+        {filteredPurchases.length === 0 && (
+          <div className="px-4 py-4 text-center text-gray-400 bg-white rounded-lg shadow">No purchases found.</div>
+        )}
+        {filteredPurchases.map((purchase) => (
+          <div key={purchase.id} className="bg-white rounded-lg shadow p-3 xs:p-2">
+            <div className="flex justify-between items-center mb-2">
+              <div>
+                <div className="text-xs text-gray-500">{format(new Date(purchase.date || ''), 'dd/MM/yyyy')}</div>
+                <div className="font-semibold text-sm xs:text-xs">{purchase.supplier_name || '-'}</div>
+                <div className="text-xs text-gray-400">Invoice: {purchase.invoice_number || '-'}</div>
+              </div>
+              <button
+                onClick={() => setExpanded(expanded === purchase.id ? null : purchase.id)}
+                className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+              >
+                {expanded === purchase.id ? 'Hide' : 'Details'}
+              </button>
+            </div>
+            <div className="flex justify-between items-center mb-1">
+              <div className="text-xs text-gray-600">Total:</div>
+              <div className="font-bold text-sm xs:text-xs">KES {purchase.total_amount.toLocaleString()}</div>
+            </div>
+            <div className="flex justify-between items-center mb-1">
+              <div className="text-xs text-gray-600">Input VAT:</div>
+              <div className="font-bold text-sm xs:text-xs">KES {purchase.input_vat_amount?.toLocaleString() || '-'}</div>
+            </div>
+            {expanded === purchase.id && (
+              <div className="mt-2">
+                <div className="font-semibold mb-1 text-xs">Items</div>
+                <div className="space-y-2">
+                  {purchase.items.map(item => {
+                    const product = products.find(p => p.id === item.product_id);
+                    return (
+                      <div key={item.id} className="border rounded p-2 bg-gray-50">
+                        <div className="flex justify-between items-center">
+                          <div className="font-medium text-xs">{product ? product.name : item.product_id}</div>
+                          <div className="text-xs text-gray-500">Qty: {item.quantity}</div>
+                        </div>
+                        <div className="flex justify-between items-center mt-1">
+                          <div className="text-xs text-gray-600">Unit Cost:</div>
+                          <div className="text-xs">KES {item.unit_cost.toLocaleString()}</div>
+                        </div>
+                        <div className="flex justify-between items-center mt-1">
+                          <div className="text-xs text-gray-600">VAT:</div>
+                          <div className="text-xs">KES {item.vat_amount?.toLocaleString() || '-'}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

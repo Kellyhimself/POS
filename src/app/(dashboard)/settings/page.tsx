@@ -358,13 +358,13 @@ export default function SettingsPage() {
         )}
       </div>
 
-      <div className="flex border-b border-gray-200">
+      <div className="flex border-b border-gray-200 overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
         {tabList.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.key}
-              className={`px-4 py-2 -mb-px border-b-4 transition-colors duration-200 font-medium flex items-center gap-2
+              className={`px-4 py-2 -mb-px border-b-4 transition-colors duration-200 font-medium flex items-center gap-2 flex-shrink-0 min-w-[120px] sm:min-w-0
                 ${activeTab === tab.key
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-blue-600'}`}

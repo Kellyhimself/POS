@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Menu, LogOut, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useRouter } from 'next/navigation';
@@ -68,13 +68,13 @@ const Sidebar = () => {
   const hasAccess = (item: NavItem) => {
     if (!item.requiredRoles) return true;
     const userRole = user?.user_metadata?.role;
-    return item.requiredRoles.includes(userRole);
+    return typeof userRole === 'string' && item.requiredRoles.includes(userRole);
   };
 
   // Handle window resize
   useEffect(() => {
     const checkMobile = () => {
-      const isMobileView = window.innerWidth < 1024;
+      const isMobileView = window.innerWidth < 480;
       setIsMobile(isMobileView);
       if (isMobileView) {
         setIsExpanded(false);
@@ -94,12 +94,12 @@ const Sidebar = () => {
 
   if (!user) return null;
 
-  const SidebarContent = () => (
+  const SidebarContent = ({ mobile = false, onMenuItemClick }: { mobile?: boolean, onMenuItemClick?: () => void }) => (
     <div className="flex flex-col h-full">
       {/* Header with toggle button only */}
       <div className="px-4 py-3 border-b border-white/10 bg-[#1A1F36]">
         <div className="flex items-center justify-end">
-          {!isMobile && (
+          {!isMobile && !mobile && (
             <Button
               variant="ghost"
               size="icon"
@@ -113,7 +113,7 @@ const Sidebar = () => {
       </div>
       
       {/* Navigation items */}
-      <div className="px-4 py-3 flex-1">
+      <div className="px-2 py-3 flex-1">
         <nav className="space-y-1">
           {navigationItems.filter(item => item.name !== 'Settings').map((item) => {
             if (!hasAccess(item)) return null;
@@ -123,28 +123,29 @@ const Sidebar = () => {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "group flex items-center px-4 py-3 text-sm rounded-xl transition-colors relative",
+                  "group flex items-center px-3 py-3 text-base rounded-xl transition-colors relative min-h-[44px] w-full",
                   pathname === item.href 
                     ? 'bg-[#0ABAB5] text-white' 
                     : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
-                  !isExpanded && "justify-center"
+                  mobile ? 'justify-start' : (!isExpanded && "justify-center"),
+                  "sm:px-3 sm:py-3 sm:text-sm xs:px-2 xs:py-3 xs:text-base md:px-4 md:py-3 md:text-sm"
                 )}
+                tabIndex={0}
+                onClick={mobile && onMenuItemClick ? onMenuItemClick : undefined}
               >
+                {!mobile && (
+                  <span className={cn(
+                    "transition-all duration-300 text-xl sm:text-base",
+                    !isExpanded && "mr-0"
+                  )}>{item.icon}</span>
+                )}
                 <span className={cn(
-                  "transition-all duration-300",
-                  !isExpanded && "mr-0"
-                )}>{item.icon}</span>
-                <span className={cn(
-                  "transition-all duration-300",
-                  !isExpanded && "opacity-0 w-0"
+                  "transition-all duration-300 ml-3 sm:ml-2",
+                  (!isExpanded && !mobile) && "opacity-0 w-0",
+                  mobile && "ml-0 w-full text-left"
                 )}>
                   {item.name}
                 </span>
-                {!isExpanded && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                    {item.name}
-                  </div>
-                )}
               </Link>
             );
           })}
@@ -153,32 +154,33 @@ const Sidebar = () => {
 
       {/* Settings menu item positioned at the bottom with reduced spacing */}
       {hasAccess(navigationItems.find(item => item.name === 'Settings')!) && (
-        <div className="px-4 pb-20">
+        <div className="px-2 pb-20">
           <Link
             href="/settings"
             className={cn(
-              "group flex items-center px-4 py-3 text-sm rounded-xl transition-colors relative",
+              "group flex items-center px-3 py-3 text-base rounded-xl transition-colors relative min-h-[44px] w-full",
               pathname === '/settings'
                 ? 'bg-[#0ABAB5] text-white' 
                 : 'text-gray-300 hover:bg-[#2D3748] hover:text-white',
-              !isExpanded && "justify-center"
+              mobile ? 'justify-start' : (!isExpanded && "justify-center"),
+              "sm:px-3 sm:py-3 sm:text-sm xs:px-2 xs:py-3 xs:text-base md:px-4 md:py-3 md:text-sm"
             )}
+            tabIndex={0}
+            onClick={mobile && onMenuItemClick ? onMenuItemClick : undefined}
           >
+            {!mobile && (
+              <span className={cn(
+                "transition-all duration-300 text-xl sm:text-base",
+                !isExpanded && "mr-0"
+              )}>⚙️</span>
+            )}
             <span className={cn(
-              "transition-all duration-300",
-              !isExpanded && "mr-0"
-            )}>⚙️</span>
-            <span className={cn(
-              "transition-all duration-300",
-              !isExpanded && "opacity-0 w-0"
+              "transition-all duration-300 ml-3 sm:ml-2",
+              (!isExpanded && !mobile) && "opacity-0 w-0",
+              mobile && "ml-0 w-full text-left"
             )}>
               Settings
             </span>
-            {!isExpanded && (
-              <div className="absolute left-full ml-2 px-2 py-1 bg-[#2D3748] text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                Settings
-              </div>
-            )}
           </Link>
         </div>
       )}
@@ -189,12 +191,14 @@ const Sidebar = () => {
     return (
       <>
         {/* Mobile menu button */}
-        <button
-          onClick={() => setIsMobileOpen(!isMobileOpen)}
-          className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-md bg-[#1A1F36] text-white"
-        >
-          {isMobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+        {!isMobileOpen && (
+          <button
+            onClick={() => setIsMobileOpen(true)}
+            className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-md bg-[#1A1F36] text-white"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        )}
 
         {/* Mobile Sidebar */}
         <div
@@ -204,29 +208,21 @@ const Sidebar = () => {
           )}
         >
           <div className="flex flex-col h-full">
-            {/* Store Info */}
-            <div className="p-4 border-b border-white/10">
-              <h2 className="text-lg font-semibold">{user.user_metadata?.store_name || 'Store'}</h2>
-              <p className="text-sm text-gray-400">{user.user_metadata?.store_location || 'Location'}</p>
-            </div>
-
             {/* Navigation */}
-            <div className="flex-1 overflow-y-auto p-4">
-              <SidebarContent />
+            <div className="flex-1 overflow-y-auto p-0">
+              <SidebarContent mobile={true} onMenuItemClick={() => setIsMobileOpen(false)} />
             </div>
 
             {/* User Section */}
             <div className="p-4 border-t border-white/10">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">{user.email}</p>
-                  <p className="text-sm text-gray-400">{user.user_metadata?.role || 'User'}</p>
-                </div>
+              <div className="flex flex-col items-center w-full gap-2 sm:items-start">
+                <p className="font-medium truncate w-full text-center sm:text-left">{String(user.email)}</p>
+                <p className="text-sm text-gray-400 truncate w-full text-center sm:text-left">{String(user.user_metadata?.role || 'User')}</p>
                 <Button
                   onClick={handleSignOut}
                   variant="ghost"
                   size="icon"
-                  className="text-white hover:bg-white/10"
+                  className="text-white hover:bg-white/10 mt-2"
                 >
                   <LogOut className="h-5 w-5" />
                 </Button>

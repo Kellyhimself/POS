@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSimplifiedAuth } from '@/components/providers/SimplifiedAuthProvider';
 import { useUnifiedService } from '@/components/providers/UnifiedServiceProvider';
 import { useRouter } from 'next/navigation';
@@ -17,10 +17,23 @@ const Header = ({ isOnline, storeName }: HeaderProps) => {
   const { user, signOut, mode } = useSimplifiedAuth();
   const { clearOfflineData } = useUnifiedService();
   const router = useRouter();
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Try to get first name from user metadata, fallback to email or 'User'
   const firstName = user?.user_metadata?.first_name || user?.user_metadata?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
   const avatarLetter = firstName.charAt(0).toUpperCase();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!isProfileOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isProfileOpen]);
 
   const handleSignOut = async () => {
     setIsProfileOpen(false);
@@ -53,50 +66,48 @@ const Header = ({ isOnline, storeName }: HeaderProps) => {
       <header className="bg-gradient-to-r from-[#1A1F36] via-[#2D3748] to-white shadow-lg border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Left side - Store name and mode indicator */}
-            <div className="flex items-center space-x-4">
+            {/* Left side - Store name */}
+            <div className="hidden md:flex items-center space-x-4">
               <h1 className="text-xl font-semibold text-white">
                 {storeName || 'Store Management'}
               </h1>
             </div>
 
-            {/* Right side - User profile */}
-            <div className="flex items-center space-x-4">
-              <ModeIndicator />
+            {/* Right side - Mode indicator and User profile */}
+            <div className="flex items-center justify-end w-full md:w-auto gap-4">
+              {/* Mode Indicator - Only show on md and up */}
+              <div className="hidden md:block">
+                <ModeIndicator />
+              </div>
+              
+              {/* Profile toggle and avatar */}
               <div className="relative">
                 <button
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center space-x-2 text-sm text-gray-700 hover:text-gray-900 focus:outline-none"
+                  className="flex items-center space-x-2 text-sm text-gray-700 hover:text-gray-900 focus:outline-none rounded-full bg-white/10"
                 >
-                  <div className="w-8 h-8 bg-[#0ABAB5] text-white rounded-full flex items-center justify-center text-sm font-medium">
+                  <div className="w-8 h-8 bg-[#0ABAB5] text-white rounded-full flex items-center justify-center text-base font-medium">
                     {avatarLetter}
                   </div>
-                  <span>{firstName}</span>
+                  <span className="hidden md:inline text-white mr-2">{firstName}</span>
                 </button>
 
                 {/* Profile dropdown */}
                 {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200">
+                  <div
+                    ref={dropdownRef}
+                    className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200"
+                  >
                     <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-100">
-                      <div className="font-medium">{user?.email}</div>
+                      <div className="font-medium break-words">{user?.email}</div>
                       <div className="text-gray-500">{user?.user_metadata?.role || 'User'}</div>
                     </div>
-                    
                     <button
                       onClick={handleSignOut}
                       className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
                       Sign out
                     </button>
-                    
-                    {mode === 'offline' && (
-                      <button
-                        onClick={() => setIsConfirmingClear(true)}
-                        className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
-                      >
-                        Clear offline data
-                      </button>
-                    )}
                   </div>
                 )}
               </div>

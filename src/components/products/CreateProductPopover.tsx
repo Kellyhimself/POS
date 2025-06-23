@@ -201,48 +201,48 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
 
   // Single-step form rendering
   const renderForm = () => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 xs:grid-cols-1 sm:grid-cols-1 md:grid-cols-2 gap-3 xs:gap-2 sm:gap-3 md:gap-4">
       {/* Basic Information */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-[#0ABAB5] border-b border-[#0ABAB5]/20 pb-1">Basic Information</h3>
+      <div className="space-y-2 xs:space-y-2 sm:space-y-3 md:space-y-3">
+        <h3 className="text-xs xs:text-[11px] sm:text-sm md:text-base font-semibold text-[#0ABAB5] border-b border-[#0ABAB5]/20 pb-1">Basic Information</h3>
         
-        <div className="space-y-2">
-          <Label htmlFor="name" className="text-[10px] sm:text-xs font-medium text-gray-300">Name *</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="name" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Name *</Label>
           <Input 
             id="name" 
             value={formData.name} 
             onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} 
             required 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="sku" className="text-[10px] sm:text-xs font-medium text-gray-300">SKU (optional)</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="sku" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">SKU (optional)</Label>
           <Input 
             id="sku" 
             value={formData.sku} 
             onChange={e => setFormData(prev => ({ ...prev, sku: e.target.value }))} 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="barcode" className="text-[10px] sm:text-xs font-medium text-gray-300">Barcode (optional)</Label>
-          <div className="flex gap-2">
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="barcode" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Barcode (optional)</Label>
+          <div className="flex gap-1 xs:gap-2 sm:gap-2 md:gap-2">
             <Input 
               id="barcode" 
               value={formData.barcode} 
               onChange={e => setFormData(prev => ({ ...prev, barcode: e.target.value }))} 
               placeholder="EAN-13, UPC, Code 128, etc."
-              className="flex-1 h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+              className="flex-1 h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
             />
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setShowBarcodeCreator(true)}
-              className="h-7 sm:h-8 px-2 text-xs bg-[#2D3748] border-[#3A3A3A] text-gray-200 hover:bg-[#0ABAB5] hover:text-white"
+              className="h-7 xs:h-8 sm:h-8 md:h-9 px-2 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 hover:bg-[#0ABAB5] hover:text-white"
               title="Scan barcode to auto-fill product info"
             >
               <Scan className="w-3 h-3" />
@@ -250,21 +250,21 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
           </div>
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="category" className="text-[10px] sm:text-xs font-medium text-gray-300">Category (optional)</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="category" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Category (optional)</Label>
           <Input 
             id="category" 
             value={formData.category} 
             onChange={e => setFormData(prev => ({ ...prev, category: e.target.value }))} 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="unit_of_measure" className="text-[10px] sm:text-xs font-medium text-gray-300">Unit of Measure *</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="unit_of_measure" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Unit of Measure *</Label>
           <select 
             id="unit_of_measure" 
-            className="w-full h-7 sm:h-8 text-xs sm:text-sm rounded-md border border-[#3A3A3A] bg-[#2D3748] text-gray-200 px-2 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="w-full h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base rounded-md border border-[#3A3A3A] bg-[#2D3748] text-gray-200 px-2 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
             value={formData.unit_of_measure} 
             onChange={e => setFormData(prev => ({ ...prev, unit_of_measure: e.target.value }))} 
             required
@@ -275,8 +275,8 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
           </select>
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="units_per_pack" className="text-[10px] sm:text-xs font-medium text-gray-300">Units per Pack *</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="units_per_pack" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Units per Pack *</Label>
           <Input 
             id="units_per_pack" 
             type="number" 
@@ -284,17 +284,17 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
             value={formData.units_per_pack} 
             onChange={e => setFormData(prev => ({ ...prev, units_per_pack: parseInt(e.target.value) || 1 }))} 
             required 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
         </div>
       </div>
 
       {/* Pricing & VAT */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-[#0ABAB5] border-b border-[#0ABAB5]/20 pb-1">Pricing & VAT</h3>
+      <div className="space-y-2 xs:space-y-2 sm:space-y-3 md:space-y-3">
+        <h3 className="text-xs xs:text-[11px] sm:text-sm md:text-base font-semibold text-[#0ABAB5] border-b border-[#0ABAB5]/20 pb-1">Pricing & VAT</h3>
         
-        <div className="space-y-2">
-          <Label htmlFor="cost_price" className="text-[10px] sm:text-xs font-medium text-gray-300">Cost Price *</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="cost_price" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Cost Price *</Label>
           <Input 
             id="cost_price" 
             type="number" 
@@ -303,12 +303,12 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
             value={formData.cost_price} 
             onChange={e => setFormData(prev => ({ ...prev, cost_price: parseFloat(e.target.value) || 0 }))} 
             required 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="retail_price" className="text-[10px] sm:text-xs font-medium text-gray-300">Retail Price *</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="retail_price" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Retail Price *</Label>
           <Input 
             id="retail_price" 
             type="number" 
@@ -317,12 +317,12 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
             value={formData.retail_price} 
             onChange={e => setFormData(prev => ({ ...prev, retail_price: parseFloat(e.target.value) || 0 }))} 
             required 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="wholesale_price" className="text-[10px] sm:text-xs font-medium text-gray-300">Wholesale Price (optional)</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="wholesale_price" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Wholesale Price (optional)</Label>
           <Input 
             id="wholesale_price" 
             type="number" 
@@ -330,28 +330,28 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
             step="0.01" 
             value={formData.wholesale_price} 
             onChange={e => setFormData(prev => ({ ...prev, wholesale_price: parseFloat(e.target.value) || 0 }))} 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="wholesale_threshold" className="text-[10px] sm:text-xs font-medium text-gray-300">Wholesale Threshold (optional)</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="wholesale_threshold" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">Wholesale Threshold (optional)</Label>
           <Input 
             id="wholesale_threshold" 
             type="number" 
             min="0" 
             value={formData.wholesale_threshold} 
             onChange={e => setFormData(prev => ({ ...prev, wholesale_threshold: parseInt(e.target.value) || 0 }))} 
-            className="h-7 sm:h-8 text-xs sm:text-sm bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base bg-[#2D3748] border-[#3A3A3A] text-gray-200 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
           />
-          <p className="text-[8px] sm:text-[10px] text-gray-400">Minimum quantity for wholesale pricing (default: 12)</p>
+          <p className="text-[8px] xs:text-[9px] sm:text-[10px] md:text-xs text-gray-400">Minimum quantity for wholesale pricing (default: 12)</p>
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="vat_status" className="text-[10px] sm:text-xs font-medium text-gray-300">VAT Status *</Label>
+        <div className="space-y-1 xs:space-y-1 sm:space-y-2 md:space-y-2">
+          <Label htmlFor="vat_status" className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm font-medium text-gray-300">VAT Status *</Label>
           <select 
             id="vat_status" 
-            className="w-full h-7 sm:h-8 text-xs sm:text-sm rounded-md border border-[#3A3A3A] bg-[#2D3748] text-gray-200 px-2 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
+            className="w-full h-7 xs:h-8 sm:h-8 md:h-9 text-xs xs:text-xs sm:text-sm md:text-base rounded-md border border-[#3A3A3A] bg-[#2D3748] text-gray-200 px-2 focus:ring-[#0ABAB5] focus:border-[#0ABAB5]" 
             value={formData.vat_status === true ? 'vatable' : formData.vat_status === false ? 'zero_rated' : 'exempted'} 
             onChange={e => {
               const value = e.target.value as 'vatable' | 'zero_rated' | 'exempted';
@@ -366,7 +366,7 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
             <option value="zero_rated">Zero Rated (0%)</option>
             <option value="exempted">Exempted</option>
           </select>
-          <p className="text-[8px] sm:text-[10px] text-gray-400">
+          <p className="text-[8px] xs:text-[9px] sm:text-[10px] md:text-xs text-gray-400">
             {formData.vat_status === true ? 'VAT will be charged at 16%' : formData.vat_status === false ? 'Zero rated for VAT' : 'No VAT will be charged'}
           </p>
         </div>
@@ -376,18 +376,18 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="flex items-center gap-2 bg-[#0ABAB5] hover:bg-[#099C98] text-white">
+      <Button onClick={() => setOpen(true)} className="flex items-center gap-2 bg-[#0ABAB5] hover:bg-[#099C98] text-white text-xs xs:text-xs sm:text-sm md:text-base px-2 xs:px-3 sm:px-4 md:px-6 h-8 xs:h-9 sm:h-10 md:h-11">
         <Plus className="h-4 w-4" />
         Add Product
       </Button>
       
       {/* Barcode Product Creator Modal */}
       {showBarcodeCreator && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Create Product with Barcode Scanner</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-2 xs:p-3 sm:p-4 md:p-6">
+          <div className="bg-white rounded-lg w-full max-w-full xs:max-w-2xl sm:max-w-3xl md:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-3 xs:p-4 sm:p-6 md:p-8">
+              <div className="flex items-center justify-between mb-2 xs:mb-3 sm:mb-4 md:mb-6">
+                <h2 className="text-base xs:text-lg sm:text-xl md:text-2xl font-bold text-gray-900">Create Product with Barcode Scanner</h2>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -407,30 +407,30 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
       )}
       
       <Sheet open={open} onOpenChange={o => { setOpen(o); }}>
-        <SheetContent side="right" className="w-full sm:w-[800px] sm:max-w-[800px] overflow-y-auto h-screen bg-[#1A1F36] border-l border-[#0ABAB5]/20">
-          <SheetHeader className="space-y-2 px-3 sm:px-6">
-            <SheetTitle className="text-sm sm:text-base font-semibold text-[#0ABAB5]">
+        <SheetContent side="right" className="w-full xs:w-full sm:w-[90vw] md:w-[800px] md:max-w-[800px] overflow-y-auto h-screen bg-[#1A1F36] border-l border-[#0ABAB5]/20 p-2 xs:p-3 sm:p-6 md:p-8">
+          <SheetHeader className="space-y-1 xs:space-y-2 sm:space-y-2 md:space-y-3 px-2 xs:px-3 sm:px-6 md:px-8">
+            <SheetTitle className="text-xs xs:text-sm sm:text-base md:text-lg font-semibold text-[#0ABAB5]">
               Create New Product
             </SheetTitle>
-            <SheetDescription className="text-[10px] sm:text-xs text-gray-400">
+            <SheetDescription className="text-[9px] xs:text-[10px] sm:text-xs md:text-sm text-gray-400">
               Create product master data. Stock can be added separately using the &quot;Add Stock&quot; button.
             </SheetDescription>
           </SheetHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-4 px-3 sm:px-6">
+          <form onSubmit={handleSubmit} className="space-y-3 xs:space-y-4 sm:space-y-4 md:space-y-6 mt-2 xs:mt-4 px-2 xs:px-3 sm:px-6 md:px-8">
             {renderForm()}
-            <SheetFooter className="mt-6 flex justify-end gap-2">
+            <SheetFooter className="mt-4 xs:mt-6 flex justify-end gap-1 xs:gap-2 sm:gap-2 md:gap-3">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setOpen(false)}
-                className="h-8 px-3 text-sm border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white transition-colors"
+                className="h-8 xs:h-9 sm:h-10 md:h-11 px-2 xs:px-3 sm:px-4 md:px-6 text-xs xs:text-xs sm:text-sm md:text-base border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white transition-colors"
               >
                 Cancel
               </Button>
               <Button 
                 type="submit" 
                 disabled={isSubmitting}
-                className="h-8 px-3 text-sm bg-[#0ABAB5] hover:bg-[#099C98] text-white transition-colors"
+                className="h-8 xs:h-9 sm:h-10 md:h-11 px-2 xs:px-3 sm:px-4 md:px-6 text-xs xs:text-xs sm:text-sm md:text-base bg-[#0ABAB5] hover:bg-[#099C98] text-white transition-colors"
               >
                 {isSubmitting ? 'Creating...' : 'Create Product'}
               </Button>
@@ -440,4 +440,4 @@ export function CreateProductPopover({ storeId }: CreateProductPopoverProps) {
       </Sheet>
     </>
   );
-} 
+}

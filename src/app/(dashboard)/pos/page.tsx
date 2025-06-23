@@ -101,6 +101,7 @@ const POSPage = () => {
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const queryClient = useQueryClient();
+  const [isCartExpanded, setIsCartExpanded] = useState(false);
 
   console.log('POS Page - Auth State:', { user, storeId, mode, currentMode });
 
@@ -604,28 +605,33 @@ const POSPage = () => {
   });
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen flex-col lg:flex-row">
       {/* Main content area */}
-      <div className="flex-1 flex h-full">
+      <div className="flex-1 flex flex-col lg:flex-row h-full">
         {/* Container for scanner, product grid and cart */}
-        <div className="flex-1 flex">
-          {/* Barcode Scanner - takes up 20% of the space */}
-          <div className="w-[20%] h-full p-4 flex justify-center">
+        <div className="flex-1 flex flex-col lg:flex-row">
+          {/* Barcode Scanner - 100% width on mobile, 20% on desktop */}
+          <div className="w-full lg:w-[20%] h-auto lg:h-full p-2 lg:p-4 flex justify-center">
             <CollapsibleBarcodeScanner 
               onAddToCart={handleBarcodeScannerAddToCart}
             />
-      </div>
+          </div>
 
-          {/* Product Grid - takes up 50% of the space */}
-          <div className="w-[50%] h-full overflow-y-auto">
-              <ProductGrid 
-                onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} 
-                shouldRefetch={shouldRefetchProducts}
-              />
-            </div>
+          {/* Product Grid - 100% width on mobile, 50% on desktop */}
+          <div className="w-full lg:w-[50%] h-64 lg:h-full overflow-y-auto">
+            <ProductGrid 
+              onAddToCart={(product, isWholesale) => addToCartMutation.mutate({ product, isWholesale })} 
+              shouldRefetch={shouldRefetchProducts}
+            />
+          </div>
 
-          {/* Cart - takes up 30% of the space */}
-          <div className="w-[30%] h-full border-l border-gray-200 overflow-y-auto">
+          {/* Cart - sticky bottom on mobile, right column on desktop */}
+          {/* Desktop cart */}
+          <div
+            className="hidden lg:block w-full lg:w-[30%] h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-gray-200 overflow-y-auto bg-white lg:bg-transparent fixed bottom-0 left-0 right-0 z-30 lg:static lg:z-auto"
+            style={{ maxHeight: 'calc(60vh + 100px)' }}
+          >
+            <div className="lg:relative lg:h-full">
               <Cart
                 items={cart}
                 onQuantityChange={handleQuantityChange}
@@ -634,12 +640,8 @@ const POSPage = () => {
                 onVatToggle={handleVatToggle}
                 paymentMethod={paymentMethod}
                 onCheckout={() => {
-                  console.log('🛒 Cart checkout clicked, paymentMutation.isPending:', paymentMutation.isPending, 'isProcessingPayment:', isProcessingPayment);
-                  // Prevent multiple submissions by checking both states
                   if (!paymentMutation.isPending && !isProcessingPayment) {
                     paymentMutation.mutate();
-                  } else {
-                    console.log('⚠️ Checkout blocked - payment already in progress');
                   }
                 }}
                 isProcessing={isProcessingPayment || paymentMutation.isPending}
@@ -650,65 +652,115 @@ const POSPage = () => {
               />
             </div>
           </div>
-        </div>
 
-        {/* Receipt Dialog */}
-        <Dialog open={showReceipt}>
-          <DialogContent className="max-w-2xl lg:max-w-4xl max-h-[90vh] bg-[#1A1F36] text-white border-[#2D3748]" showCloseButton={false}>
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <DialogTitle className="text-white">Transaction Complete</DialogTitle>
-
+          {/* Mobile cart button and expandable cart */}
+          <div className="block lg:hidden fixed bottom-0 left-0 right-0 z-40">
+            {/* View Cart Button */}
+            {!isCartExpanded && (
+              <button
+                onClick={() => setIsCartExpanded(true)}
+                className="w-full h-14 bg-[#1A1F36] text-white flex items-center justify-between px-4 text-base font-semibold shadow-lg rounded-t-lg"
+              >
+                <span>View Cart ({cart.length})</span>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+              </button>
+            )}
+            {/* Expandable Cart */}
+            {isCartExpanded && (
+              <div className="bg-white border-t border-gray-200 shadow-2xl rounded-t-lg max-h-[80vh] overflow-y-auto animate-slideUp">
+                <div className="flex justify-between items-center p-4 border-b border-gray-100">
+                  <span className="font-bold text-lg text-[#0ABAB5]">Cart</span>
+                  <button
+                    onClick={() => setIsCartExpanded(false)}
+                    className="text-gray-500 hover:text-gray-700 p-2"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
+                  </button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleCloseReceipt}
-                  className="text-gray-400 hover:text-white hover:bg-white/10"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </DialogHeader>
-            {receiptData && (
-              <div className="py-4">
-                <EnhancedReceiptActions 
-                  receipt={{
-                    id: receiptData.sale.id,
-                    items: receiptData.sale.products.map(product => ({
-                      name: product.name,
-                      quantity: product.quantity,
-                      price: product.price,
-                      vat_amount: product.vat_amount,
-                      vat_status: product.vat_status,
-                      total: product.total
-                    })),
-                    total: receiptData.sale.total,
-                    vat_total: receiptData.sale.vat_total,
-                    discount_amount: receiptData.sale.discount_amount,
-                    discount_type: receiptData.sale.discount_type,
-                    discount_value: discountValue,
-                    payment_method: receiptData.sale.payment_method,
-                    phone: paymentMethod === 'mobile money' ? phone : undefined,
-                    cash_amount: paymentMethod === 'cash' ? cashAmount : undefined,
-                    balance: paymentMethod === 'cash' ? calculateBalance() : undefined
-                  }}
-                  onComplete={handleCloseReceipt}
-                  autoPrint={receiptSettings.autoPrint}
-                  autoDownload={receiptSettings.autoDownload}
-                  enableAutoActions={
-                    // For cash payments, only enable auto-actions if cash amount is properly set
-                    paymentMethod === 'cash' 
-                      ? cashAmount > 0 && cashAmount >= receiptData.sale.total
-                      : true // For non-cash payments, always enable
-                  }
-                  onCashAmountChange={handleCashAmountChange}
-                />
+                <div className="p-2">
+                  <Cart
+                    items={cart}
+                    onQuantityChange={handleQuantityChange}
+                    onRemoveItem={handleRemoveItem}
+                    onPaymentMethodChange={setPaymentMethod}
+                    onVatToggle={handleVatToggle}
+                    paymentMethod={paymentMethod}
+                    onCheckout={() => {
+                      if (!paymentMutation.isPending && !isProcessingPayment) {
+                        paymentMutation.mutate();
+                      }
+                    }}
+                    isProcessing={isProcessingPayment || paymentMutation.isPending}
+                    discountType={discountType}
+                    discountValue={discountValue}
+                    onDiscountTypeChange={setDiscountType}
+                    onDiscountValueChange={setDiscountValue}
+                  />
+                </div>
               </div>
             )}
-          </DialogContent>
-        </Dialog>
+          </div>
+        </div>
+      </div>
+
+      {/* Receipt Dialog - full screen on mobile */}
+      <Dialog open={showReceipt}>
+        <DialogContent 
+          className="max-w-2xl lg:max-w-4xl max-h-[90vh] bg-[#1A1F36] text-white border-[#2D3748] p-0 sm:p-4 w-full h-full sm:h-auto sm:rounded-lg"
+          showCloseButton={false}
+        >
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-white">Transaction Complete</DialogTitle>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleCloseReceipt}
+                className="text-gray-400 hover:text-white hover:bg-white/10"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+          {receiptData && (
+            <div className="py-4">
+              <EnhancedReceiptActions 
+                receipt={{
+                  id: receiptData.sale.id,
+                  items: receiptData.sale.products.map(product => ({
+                    name: product.name,
+                    quantity: product.quantity,
+                    price: product.price,
+                    vat_amount: product.vat_amount,
+                    vat_status: product.vat_status,
+                    total: product.total
+                  })),
+                  total: receiptData.sale.total,
+                  vat_total: receiptData.sale.vat_total,
+                  discount_amount: receiptData.sale.discount_amount,
+                  discount_type: receiptData.sale.discount_type,
+                  discount_value: discountValue,
+                  payment_method: receiptData.sale.payment_method,
+                  phone: paymentMethod === 'mobile money' ? phone : undefined,
+                  cash_amount: paymentMethod === 'cash' ? cashAmount : undefined,
+                  balance: paymentMethod === 'cash' ? calculateBalance() : undefined
+                }}
+                onComplete={handleCloseReceipt}
+                autoPrint={receiptSettings.autoPrint}
+                autoDownload={receiptSettings.autoDownload}
+                enableAutoActions={
+                  paymentMethod === 'cash' 
+                    ? cashAmount > 0 && cashAmount >= receiptData.sale.total
+                    : true
+                }
+                onCashAmountChange={handleCashAmountChange}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -88,7 +88,7 @@ function RootLayoutContent({ children }: { children: React.ReactNode }) {
         <Sidebar />
         
         {/* Main Content Area - Properly positioned to avoid sidebar overlap */}
-        <div className="flex-1 flex flex-col min-w-0 ml-16">
+        <div className="flex-1 flex flex-col min-w-0 ml-0 md:ml-16">
           {/* Header - Sticky at top of main content area */}
           <Header isOnline={mode === 'online'} storeName={storeName || undefined} />
           

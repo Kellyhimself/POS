@@ -268,3 +268,10 @@ the app will have a styling and structure similar to that of Paystack company we
 
 
 npx supabase gen types typescript --project-id xugqiojkjvqzqewugldk --schema public > src/types/supabase.ts
+```
+
+---
+
+## 10. Responsive Design InitiativeP
+
+To ensure optimal usability on all devices, especially mobile phonesP, we are launching a comprehensive responsive design initiative. This will target breakpoints at 480px, 409px, and 380px, and will involve refactoring layouts, components, and pages for mobile-friendliness while preserving all critical functionalities. For detailed steps, see `docs/responsive-design-plan.md`.

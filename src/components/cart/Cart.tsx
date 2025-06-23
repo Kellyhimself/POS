@@ -158,9 +158,9 @@ export function Cart({
 
   return (
     <div className="h-full flex flex-col bg-[#F7F9FC]">
-      <div className="h-[40%] overflow-y-auto p-3">
-        <h2 className="text-lg font-bold text-[#0ABAB5] mb-2">Cart</h2>
-        
+      {/* Upper section: Selected products, scrollable, 55% height */}
+      <div className="basis-[45%] min-h-0 overflow-y-auto p-2 xs:p-1 sm:p-2 md:p-3">
+        <h2 className="text-base xs:text-sm sm:text-base md:text-lg font-bold text-[#0ABAB5] mb-2">Cart</h2>
         {/* Cost Protection Warnings */}
         {allWarnings.length > 0 && (
           <div className="mb-3 space-y-2">
@@ -179,27 +179,22 @@ export function Cart({
             ))}
           </div>
         )}
-        
         {items.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-2">No items in cart</p>
+          <p className="text-xs xs:text-xs sm:text-sm text-gray-500 text-center py-2">No items in cart</p>
         ) : (
           <div className="space-y-1">
             {items.map((item, index) => {
-              // Calculate display price and VAT amount dynamically for each item
               const dynamicDisplayPrice = calculatePrice(item.price, item.product.vat_status ?? false);
               const dynamicVatAmount = calculateVatAmount(item.price, item.product.vat_status ?? false);
-              
-              // Check if this item has cost protection warnings
               const itemWarning = allWarnings.find(w => 
                 w && 'itemIndex' in w && (w as { itemIndex: number }).itemIndex === index
               );
-              
               return (
-                <div key={item.product.id + '-' + index} className={`bg-white rounded-lg shadow p-2 ${
+                <div key={item.product.id + '-' + index} className={`bg-white rounded-lg shadow p-2 xs:p-1 sm:p-2 md:p-3 ${
                   itemWarning ? 'border-2 border-red-200' : ''
                 }`}>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900 truncate">{item.product.name}</p>
+                  <div className="flex flex-col xs:flex-row sm:flex-row items-start xs:items-center sm:items-center justify-between gap-1 xs:gap-2 sm:gap-2">
+                    <p className="text-xs xs:text-xs sm:text-sm font-medium text-gray-900 truncate">{item.product.name}</p>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="outline"
@@ -211,14 +206,13 @@ export function Cart({
                       </Button>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mt-1">
+                  <div className="flex flex-col xs:flex-row sm:flex-row items-start xs:items-center sm:items-center justify-between mt-1 gap-1 xs:gap-2 sm:gap-2">
                     <div className="space-y-0.5">
-                      <p className="text-xs text-gray-600">
+                      <p className="text-xs xs:text-xs sm:text-sm text-gray-600">
                         {item.saleMode === 'wholesale' ? 'Wholesale:' : 'Retail:'} KES {dynamicDisplayPrice.toFixed(2)}
                       </p>
-                      {/* Only show VAT if it's enabled and amount > 0 */}
                       {isVatEnabled && dynamicVatAmount > 0 && (
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs xs:text-xs sm:text-sm text-gray-500">
                           VAT: KES {dynamicVatAmount.toFixed(2)}
                         </p>
                       )}
@@ -229,23 +223,23 @@ export function Cart({
                         size="sm"
                         onClick={() => onQuantityChange(index, item.quantity - 1)}
                         disabled={item.quantity <= 1}
-                        className="h-5 w-5 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
+                        className="h-6 w-6 xs:h-6 xs:w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
                       >
                         -
                       </Button>
-                      <span className="w-5 text-center text-xs font-medium text-gray-900">{item.quantity}</span>
+                      <span className="w-6 xs:w-6 sm:w-7 md:w-8 text-center text-xs xs:text-xs sm:text-sm font-medium text-gray-900">{item.quantity}</span>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => onQuantityChange(index, item.quantity + 1)}
-                        className="h-5 w-5 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
+                        className="h-6 w-6 xs:h-6 xs:w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 p-0 border-[#0ABAB5] text-[#0ABAB5] hover:bg-[#0ABAB5] hover:text-white"
                       >
                         +
                       </Button>
                     </div>
                   </div>
                   <div className="mt-1 text-right">
-                    <p className="text-xs font-medium text-gray-900">
+                    <p className="text-xs xs:text-xs sm:text-sm font-medium text-gray-900">
                       Total: KES {(dynamicDisplayPrice * item.quantity).toFixed(2)}
                     </p>
                   </div>
@@ -255,38 +249,33 @@ export function Cart({
           </div>
         )}
       </div>
-
-      <div className="flex-1 border-t border-gray-200 bg-white p-4 space-y-4">
+      {/* Lower section: Summary, payment, checkout, 45% height */}
+      <div className="basis-[55%] flex-shrink-0 border-t border-gray-200 bg-white p-3 xs:p-1 sm:p-2 md:p-4 space-y-4 flex flex-col justify-between">
         <div className="space-y-1">
-          <div className="flex justify-between text-xs">
+          <div className="flex justify-between text-xs xs:text-xs sm:text-sm">
             <span className="text-gray-600">Subtotal:</span>
             <span className="font-medium text-gray-900">KES {subtotal.toFixed(2)}</span>
           </div>
-          {/* Only show VAT line if VAT is enabled and there's VAT to show */}
           {isVatEnabled && vatTotal > 0 && (
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between text-xs xs:text-xs sm:text-sm">
               <span className="text-gray-600">VAT:</span>
               <span className="font-medium text-gray-900">KES {vatTotal.toFixed(2)}</span>
             </div>
           )}
-          
-          {/* Cost Information (when cost protection is enabled) */}
           {costProtectionSettings.enableCostProtection && items.length > 0 && (
-            <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-gray-100">
+            <div className="flex justify-between text-xs xs:text-xs sm:text-sm text-gray-500 pt-1 border-t border-gray-100">
               <span>Total Cost:</span>
               <span>KES {items.reduce((sum, item) => sum + ((item.product.cost_price || 0) * item.quantity), 0).toFixed(2)}</span>
             </div>
           )}
-          
-          {/* Discount Section */}
           <div className="space-y-2 pt-2 border-t border-gray-200">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-600">Discount:</span>
+              <span className="text-xs xs:text-xs sm:text-sm text-gray-600">Discount:</span>
               <div className="flex items-center gap-2">
                 <select
                   value={discountType || ''}
                   onChange={(e) => onDiscountTypeChange(e.target.value as 'percentage' | 'cash' | null)}
-                  className="text-xs border rounded px-1 py-0.5"
+                  className="text-xs xs:text-xs sm:text-sm border rounded px-1 py-0.5"
                 >
                   <option value="">No Discount</option>
                   <option value="percentage">Percentage (%)</option>
@@ -300,28 +289,26 @@ export function Cart({
                     step={discountType === 'percentage' ? 1 : 0.01}
                     value={discountValue}
                     onChange={(e) => onDiscountValueChange(Number(e.target.value))}
-                    className="w-20 text-xs border rounded px-1 py-0.5"
+                    className="w-16 xs:w-14 sm:w-20 text-xs xs:text-xs sm:text-sm border rounded px-1 py-0.5"
                     placeholder={discountType === 'percentage' ? '%' : 'KES'}
                   />
                 )}
               </div>
             </div>
             {discountAmount > 0 && (
-              <div className="flex justify-between text-xs text-red-600">
+              <div className="flex justify-between text-xs xs:text-xs sm:text-sm text-red-600">
                 <span>Discount Amount:</span>
                 <span>-KES {discountAmount.toFixed(2)}</span>
               </div>
             )}
           </div>
-
           <div className="flex justify-between font-semibold pt-1 border-t border-gray-200">
-            <span className="text-sm text-gray-900">Total:</span>
-            <span className="text-sm text-gray-900">KES {total.toFixed(2)}</span>
+            <span className="text-sm xs:text-xs sm:text-sm text-gray-900">Total:</span>
+            <span className="text-sm xs:text-xs sm:text-sm text-gray-900">KES {total.toFixed(2)}</span>
           </div>
         </div>
-
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col xs:flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <div className="flex items-center space-x-2">
               <Switch
                 id="vat"
@@ -329,29 +316,27 @@ export function Cart({
                 onCheckedChange={onVatToggle}
                 className="data-[state=checked]:bg-[#0ABAB5]"
               />
-              <Label htmlFor="vat" className="text-xs text-gray-700">Enable VAT</Label>
+              <Label htmlFor="vat" className="text-xs xs:text-xs sm:text-sm text-gray-700">Enable VAT</Label>
             </div>
-
-            <RadioGroup value={paymentMethod} onValueChange={onPaymentMethodChange} className="flex flex-row gap-4">
+            <RadioGroup value={paymentMethod} onValueChange={onPaymentMethodChange} className="flex flex-row gap-2 xs:gap-1 sm:gap-4">
               <div className="flex items-center space-x-1">
                 <RadioGroupItem value="cash" id="cash" className="text-[#0ABAB5] border-[#0ABAB5]" />
-                <Label htmlFor="cash" className="text-xs text-gray-700">Cash</Label>
+                <Label htmlFor="cash" className="text-xs xs:text-xs sm:text-sm text-gray-700">Cash</Label>
               </div>
               <div className="flex items-center space-x-1">
                 <RadioGroupItem value="mobile money" id="mobile-money" className="text-[#0ABAB5] border-[#0ABAB5]" />
-                <Label htmlFor="mobile-money" className="text-xs text-gray-700">Mobile Money</Label>
+                <Label htmlFor="mobile-money" className="text-xs xs:text-xs sm:text-sm text-gray-700">Mobile Money</Label>
               </div>
               <div className="flex items-center space-x-1">
                 <RadioGroupItem value="credit" id="credit" className="text-[#0ABAB5] border-[#0ABAB5]" />
-                <Label htmlFor="credit" className="text-xs text-gray-700">Credit</Label>
+                <Label htmlFor="credit" className="text-xs xs:text-xs sm:text-sm text-gray-700">Credit</Label>
               </div>
             </RadioGroup>
           </div>
-
           <Button
             onClick={onCheckout}
             disabled={items.length === 0 || isProcessing}
-            className="w-full h-9 text-sm bg-[#0ABAB5] hover:bg-[#0ABAB5]/90 text-white font-medium rounded-lg transition-colors"
+            className="w-full h-9 text-xs xs:text-xs sm:text-sm bg-[#0ABAB5] hover:bg-[#0ABAB5]/90 text-white font-medium rounded-lg transition-colors"
           >
             {isProcessing ? (
               <>

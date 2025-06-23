@@ -225,4 +225,25 @@ For issues during migration:
 2. Review the migration guide (`docs/migration-guide.md`)
 3. Use the migration helper script (`scripts/migration-helper.cjs`)
 4. Check browser console for error messages
-5. Verify all providers are properly set up 
+5. Verify all providers are properly set up
+
+## Responsive Design Progress
+
+See `docs/responsive-design-plan.md` for the full plan and checklist.
+
+### Progress Checklist
+- [x] Audit and mapping of all pages and components
+- [x] Design system and responsive utility setup
+- [x] Layout refactoring for main containers
+- [x] Sidebar component refactored for full responsiveness (custom Tailwind breakpoints in use)
+- [x] Header component refactored for full responsiveness (custom Tailwind breakpoints in use)
+- [x] ProductGrid component fully responsive (xs/sm/md/lg/xl breakpoints, mobile UX improved)
+- [x] Cart component fully responsive (xs/sm/md/lg/xl breakpoints, mobile UX improved)
+- [x] CollapsibleBarcodeScanner component fully responsive (xs/sm/md/lg/xl breakpoints, mobile UX improved, matches POS layout)
+- [ ] Component-level responsiveness (tables, forms, modals, etc.)
+- [ ] Page-specific adjustments (POS, Cart, Reports, Settings)
+- [ ] Testing on real devices/emulators at all breakpoints
+- [ ] Accessibility and usability review
+- [ ] Documentation and stakeholder review
+
+Each completed item will be checked off with notes on any critical changes or issues encountered. 
